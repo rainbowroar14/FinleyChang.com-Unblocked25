@@ -1,6 +1,6 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 import { createTtt, place } from './ttt.js?v=1'
-import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID } from './stealth.js?v=4'
+import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID, advanceStealthRound } from './stealth.js?v=5'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
@@ -50,6 +50,7 @@ let joinedAt = 0
 let match = null
 let timer = 0
 let stealthLast = 0
+let stealthNextTimer = 0
 let picked = 'snake'
 const desired = {}
 const stealthInputs = {}
@@ -117,7 +118,7 @@ function selectGame(game) {
     tag.textContent = picked === 'ttt'
       ? 'Tic Tac Toe. Host a public game or join one.'
       : picked === 'stealth'
-        ? 'Stealth. Fight a bot alone, or host a 1v1.'
+        ? 'Stealth best of 3. Knife vs gun. Fight a bot or host a 1v1.'
         : 'Snake. Host a public game or join one.'
   }
 }
@@ -293,7 +294,7 @@ function showBoard(game) {
   helpEl.textContent = game === 'ttt'
     ? 'Tap a square on your turn. Three in a row wins.'
     : game === 'stealth'
-      ? 'WASD to move. Aim with the mouse. Click to shoot. You only see 45° toward the cursor.'
+      ? 'Best of 3. Knife sees 90° and slashes close. Gun sees 45° and shoots. WASD + mouse.'
       : 'Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.'
   banner.classList.toggle('under', game === 'ttt')
   mark.textContent = GAME_LABEL[game] || 'Games'
@@ -381,41 +382,93 @@ function localStealthInput() {
   }
 }
 
+function stealthScoreLine(state) {
+  return state.players
+    .map((player) => (state.scores[player.id] || 0))
+    .join('–')
+}
+
 function showStealth(state) {
   match = state
   const mine = state.players.find((player) => player.id === myId)
   if (mine && !state.over) mine.a = stealthAim
   drawStealth(stealthCtx, state, myId)
   scoreEl.replaceChildren()
+  const roundItem = document.createElement('li')
+  const roundLabel = document.createElement('span')
+  roundLabel.textContent = 'Round ' + state.round + ' · best of 3 · ' + stealthScoreLine(state)
+  roundItem.append(roundLabel)
+  scoreEl.appendChild(roundItem)
   state.players.forEach((player) => {
     const item = document.createElement('li')
     if (!player.alive) item.className = 'dead'
     const label = document.createElement('span')
-    label.textContent = player.name + (player.id === myId ? ' · you' : '') + (player.alive ? '' : ' · down')
+    const weapon = player.weapon === 'knife' ? 'knife' : 'gun'
+    label.textContent =
+      player.name +
+      (player.id === myId ? ' · you' : '') +
+      ' · ' +
+      weapon +
+      ' · ' +
+      (state.scores[player.id] || 0) +
+      (player.alive ? '' : ' · down')
     item.append(label)
     scoreEl.appendChild(item)
   })
   if (!state.over) {
     banner.hidden = true
     againButton.hidden = true
-    tag.textContent = 'WASD. Aim with the mouse. Click to shoot.'
+    const mineWeapon = mine && mine.weapon === 'knife' ? 'Knife (90°). Click to slash.' : 'Gun (45°). Click to shoot.'
+    tag.textContent = 'Round ' + state.round + '. ' + mineWeapon
     return
   }
   const winner = state.players.find((player) => player.id === state.winner)
-  const text = !winner
+  const roundText = !winner
     ? 'Round over.'
     : winner.id === myId
-      ? 'You win.'
-      : winner.name + ' wins.'
+      ? 'You take the round.'
+      : winner.name + ' takes the round.'
+  let text = roundText + ' ' + stealthScoreLine(state)
+  if (state.seriesOver) {
+    const champ = state.players.find((player) => player.id === state.seriesWinner)
+    text = champ
+      ? champ.id === myId
+        ? 'You win the set ' + stealthScoreLine(state) + '.'
+        : champ.name + ' wins the set ' + stealthScoreLine(state) + '.'
+      : 'Set over.'
+  } else {
+    text += '. Next round…'
+  }
   banner.hidden = false
   banner.textContent = text
   tag.textContent = text
-  againButton.hidden = !hosting
+  againButton.hidden = !(hosting && state.seriesOver)
+  againButton.textContent = 'Play again'
 }
 
 function stopStealthLoop() {
   window.clearInterval(timer)
   timer = 0
+}
+
+function clearStealthNext() {
+  window.clearTimeout(stealthNextTimer)
+  stealthNextTimer = 0
+}
+
+function queueNextStealthRound() {
+  clearStealthNext()
+  if (!hosting || !match || !match.over || match.seriesOver) return
+  stealthNextTimer = window.setTimeout(() => {
+    stealthNextTimer = 0
+    if (!hosting || !match || match.seriesOver) return
+    match = advanceStealthRound(match)
+    for (const key of Object.keys(stealthInputs)) delete stealthInputs[key]
+    showStealth(match)
+    broadcast()
+    stealthLast = performance.now()
+    timer = window.setInterval(stealthTick, 33)
+  }, 2200)
 }
 
 function stealthTick() {
@@ -436,7 +489,10 @@ function stealthTick() {
   })
   showStealth(match)
   broadcast()
-  if (match.over) stopStealthLoop()
+  if (match.over) {
+    stopStealthLoop()
+    if (!match.seriesOver) queueNextStealthRound()
+  }
 }
 
 function tick() {
@@ -463,6 +519,7 @@ function begin(players) {
   window.clearInterval(timer)
   timer = 0
   stopStealthLoop()
+  clearStealthNext()
   for (const key of Object.keys(desired)) delete desired[key]
   for (const key of Object.keys(stealthInputs)) delete stealthInputs[key]
   publicGame = false
@@ -479,7 +536,9 @@ function begin(players) {
     return
   }
   if (roomGame === 'stealth') {
-    match = createStealthMatch(players)
+    const hostSeat = players.find((person) => person.id === myId && hosting) || players[0]
+    const ordered = [hostSeat, ...players.filter((person) => person.id !== hostSeat.id)].slice(0, 2)
+    match = createStealthMatch(ordered, { hostId: hostSeat.id, round: 1, coin: Math.random() })
     showStealth(match)
     broadcast()
     if (hosting) {
@@ -540,10 +599,21 @@ function openRoom(code, asHost, isPublic, game) {
     if (hosting && match && !match.over && roomGame === 'stealth') {
       const other = match.players.find((player) => player.id !== key && player.alive)
       if (other) {
-        match = { ...match, over: true, winner: other.id, players: match.players.map((player) => (player.id === key ? { ...player, alive: false } : player)) }
+        const scores = { ...match.scores }
+        scores[other.id] = (scores[other.id] || 0) + 1
+        match = {
+          ...match,
+          over: true,
+          winner: other.id,
+          scores,
+          seriesOver: true,
+          seriesWinner: other.id,
+          players: match.players.map((player) => (player.id === key ? { ...player, alive: false } : player)),
+        }
         showStealth(match)
         broadcast()
         stopStealthLoop()
+        clearStealthNext()
       }
     }
     if (!match) refreshLobby()
@@ -571,7 +641,11 @@ function openRoom(code, asHost, isPublic, game) {
         play.hidden = false
         showBoard('stealth')
       }
+      const wasOver = match && match.over
       showStealth(payload)
+      if (payload.over && !wasOver && !payload.seriesOver) {
+        /* host advances; guest just waits for the next state */
+      }
       return
     }
     if (!payload.snakes) return
