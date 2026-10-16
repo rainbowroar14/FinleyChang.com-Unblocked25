@@ -153,7 +153,35 @@ function ejectSolids(body) {
   }
 }
 
-function separatePlayers(a, b) {
+function horizOverlap(a, b) {
+  return Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+}
+
+function landOnHead(rider, base, dt) {
+  rider.y = base.y - rider.h
+  if (rider.vy > 0) rider.vy = 0
+  rider.grounded = true
+  rider.x += base.vx * dt
+}
+
+function tryStandOnHead(rider, base, dt) {
+  // Still rising from a jump — don't glue back onto the head
+  if (rider.vy < -40) return false
+  const overlap = horizOverlap(rider, base)
+  if (overlap < rider.w * 0.2) return false
+  const feet = rider.y + rider.h
+  if (feet < base.y - 3 || feet > base.y + 18) return false
+  if (rider.y + rider.h * 0.5 > base.y + base.h * 0.55) return false
+  landOnHead(rider, base, dt)
+  return true
+}
+
+function separatePlayers(a, b, dt) {
+  if (tryStandOnHead(a, b, dt) || tryStandOnHead(b, a, dt)) {
+    ejectSolids(a)
+    ejectSolids(b)
+    return
+  }
   if (!overlaps(a, b)) return
   const overlapX = Math.min(a.x + a.w - b.x, b.x + b.w - a.x)
   const overlapY = Math.min(a.y + a.h - b.y, b.y + b.h - a.y)
@@ -169,13 +197,9 @@ function separatePlayers(a, b) {
     a.vx *= 0.5
     b.vx *= 0.5
   } else if (a.y < b.y) {
-    a.y -= overlapY + 0.01
-    if (!b.grounded) b.y += overlapY * 0.25
-    if (a.vy > 0) a.vy = 0
+    landOnHead(a, b, dt)
   } else {
-    b.y -= overlapY + 0.01
-    if (!a.grounded) a.y += overlapY * 0.25
-    if (b.vy > 0) b.vy = 0
+    landOnHead(b, a, dt)
   }
   ejectSolids(a)
   ejectSolids(b)
@@ -295,9 +319,9 @@ export function stepChain(state, inputs, dt) {
     collideY(player, prevY)
   })
   if (next.players.length >= 2) {
-    separatePlayers(next.players[0], next.players[1])
+    separatePlayers(next.players[0], next.players[1], dt)
     enforceChain(next.players[0], next.players[1])
-    separatePlayers(next.players[0], next.players[1])
+    separatePlayers(next.players[0], next.players[1], dt)
     enforceChain(next.players[0], next.players[1])
     next.players.forEach((player) => ejectSolids(player))
   }
