@@ -1,10 +1,11 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 import { createTtt, place } from './ttt.js?v=1'
+import { createStealth } from './stealth.js?v=1'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
 const CELL = 32
-const GAME_LABEL = { snake: 'Snake', ttt: 'Tic Tac Toe' }
+const GAME_LABEL = { snake: 'Snake', ttt: 'Tic Tac Toe', stealth: 'Stealth' }
 
 const lobby = document.getElementById('lobby')
 const waiting = document.getElementById('waiting')

@@ -74,7 +74,7 @@ button, input { font: inherit; }
 
 .pick {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
@@ -194,7 +194,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 #games-empty[hidden],
 #snake-stage[hidden],
 #ttt-stage[hidden],
-#pad[hidden] {
+#stealth-stage[hidden],
+#pad[hidden],
+#stealth-pad[hidden] {
   display: none;
 }
 
@@ -280,8 +282,15 @@ canvas {
 
 .pad button { font-size: 20px; padding: 12px; }
 
+.pad.shoot { grid-template-columns: 1fr 1fr 1fr; }
+
+.pad.shoot .wide { grid-column: 1 / -1; }
+
+input:disabled { opacity: 0.45; }
+
 @media (max-width: 800px) {
   .play { grid-template-columns: 1fr; }
+  .pick { grid-template-columns: 1fr; }
   .top { padding: 16px 16px 0; }
 }
 

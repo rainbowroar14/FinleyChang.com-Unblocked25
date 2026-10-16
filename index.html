@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Games</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314120e'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23e23d3d'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="styles.css?v=4" />
+    <link rel="stylesheet" href="styles.css?v=5" />
   </head>
   <body>
     <header class="top">
@@ -31,6 +31,10 @@
             <span class="game-name">Tic Tac Toe</span>
             <span class="game-meta">2 players</span>
           </button>
+          <button type="button" class="game-card" data-game="stealth" id="pick-stealth" aria-pressed="false">
+            <span class="game-name">Stealth</span>
+            <span class="game-meta">Solo</span>
+          </button>
         </div>
         <div class="row">
           <button type="button" id="host" class="primary">Host public</button>
@@ -39,7 +43,7 @@
           <input id="room" maxlength="4" placeholder="Code" aria-label="Room code" autocapitalize="characters" />
           <button type="button" id="join">Join</button>
         </div>
-        <p class="note">Pick a game to host. Join a row below, or enter a code for the game you picked.</p>
+        <p class="note" id="blurb">Pick a game to host. Join a row below, or enter a code for the game you picked.</p>
         <p class="error" id="error" hidden></p>
         <p class="list-title">Open games</p>
         <ul class="games" id="games"></ul>
@@ -56,6 +60,9 @@
       <div class="board-wrap">
         <div class="stage" id="snake-stage">
           <canvas id="board" width="480" height="480"></canvas>
+        </div>
+        <div class="stage" id="stealth-stage" hidden>
+          <canvas id="stealth" width="480" height="480"></canvas>
         </div>
         <div class="stage" id="ttt-stage" hidden>
           <div class="ttt" id="grid">
@@ -75,6 +82,13 @@
       <aside>
         <ol class="players" id="score"></ol>
         <p class="help" id="help">Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.</p>
+        <div class="pad shoot" id="stealth-pad" hidden>
+          <button type="button" data-act="left" aria-label="Turn left">↺</button>
+          <button type="button" data-act="forward" aria-label="Forward">↑</button>
+          <button type="button" data-act="right" aria-label="Turn right">↻</button>
+          <button type="button" data-act="back" aria-label="Back">↓</button>
+          <button type="button" class="wide" data-act="shoot">Fire</button>
+        </div>
         <div class="pad" id="pad">
           <button type="button" data-dir="up" aria-label="Up">↑</button>
           <button type="button" data-dir="left" aria-label="Left">←</button>
@@ -86,6 +100,6 @@
     </section>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-    <script type="module" src="main.js?v=11"></script>
+    <script type="module" src="main.js?v=12"></script>
   </body>
 </html>
