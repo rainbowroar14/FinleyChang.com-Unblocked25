@@ -1,6 +1,6 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 import { createTtt, place } from './ttt.js?v=1'
-import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID, advanceStealthRound } from './stealth.js?v=11'
+import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID, advanceStealthRound } from './stealth.js?v=12'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
@@ -388,8 +388,92 @@ function stealthScoreLine(state) {
     .join('–')
 }
 
+function stealthReadyCount(state) {
+  return state.players.filter((player) => state.ready && state.ready[player.id]).length
+}
+
+function withStealthReady(state) {
+  if (!state || !state.over) return state
+  if (state.ready) return state
+  const ready = {}
+  if (state.players.some((player) => player.id === BOT_ID)) ready[BOT_ID] = true
+  return { ...state, ready }
+}
+
+function stealthPeople() {
+  if (!match) return []
+  const againstBot = match.players.some((player) => player.id === BOT_ID)
+  let people = match.players
+    .map((player) => ({ id: player.id, name: player.name }))
+    .filter((person) => person.id === BOT_ID || roster().some((item) => item.id === person.id))
+  if (againstBot) {
+    const human = people.find((person) => person.id !== BOT_ID) || { id: myId, name: myName() }
+    people = [human, { id: BOT_ID, name: 'Bot' }]
+  }
+  return people
+}
+
+function startStealthFromReady() {
+  if (!hosting || !match || !match.over) return
+  const ready = match.ready || {}
+  if (!match.players.every((player) => ready[player.id])) return
+  clearStealthNext()
+  for (const key of Object.keys(stealthInputs)) delete stealthInputs[key]
+  if (match.seriesOver) {
+    const people = stealthPeople()
+    if (!people.length) {
+      tag.textContent = 'Stay in the room to play again.'
+      return
+    }
+    channel.send({ type: 'broadcast', event: 'start', payload: { players: people } })
+    begin(people)
+    return
+  }
+  match = advanceStealthRound(match)
+  showStealth(match)
+  broadcast()
+  stealthLast = performance.now()
+  timer = window.setInterval(stealthTick, 33)
+}
+
+function markStealthReady(id) {
+  if (!hosting || !match || !match.over || !id) return
+  if (!match.players.some((player) => player.id === id)) return
+  match = withStealthReady(match)
+  if (match.ready[id]) {
+    startStealthFromReady()
+    return
+  }
+  match = {
+    ...match,
+    ready: { ...match.ready, [id]: true },
+  }
+  if (match.players.some((player) => player.id === BOT_ID)) {
+    match = { ...match, ready: { ...match.ready, [BOT_ID]: true } }
+  }
+  showStealth(match)
+  broadcast()
+  startStealthFromReady()
+}
+
+function requestStealthReady() {
+  if (!match || !match.over) return
+  if (!match.players.some((player) => player.id === myId)) return
+  const ready = match.ready || {}
+  if (ready[myId]) return
+  if (hosting) {
+    markStealthReady(myId)
+    return
+  }
+  match = withStealthReady(match)
+  match = { ...match, ready: { ...match.ready, [myId]: true } }
+  showStealth(match)
+  if (channel) channel.send({ type: 'broadcast', event: 'stealth-ready', payload: { id: myId } })
+}
+
 function showStealth(state) {
-  match = state
+  match = withStealthReady(state)
+  state = match
   const mine = state.players.find((player) => player.id === myId)
   if (mine && !state.over) mine.a = stealthAim
   drawStealth(stealthCtx, state, myId)
@@ -405,6 +489,7 @@ function showStealth(state) {
     const label = document.createElement('span')
     const weapon = player.weapon === 'knife' ? 'knife' : 'gun'
     const hp = typeof player.hp === 'number' ? player.hp : player.maxHp || 1
+    const readyMark = state.over && state.ready && state.ready[player.id] ? ' · ready' : ''
     label.textContent =
       player.name +
       (player.id === myId ? ' · you' : '') +
@@ -414,13 +499,15 @@ function showStealth(state) {
       hp +
       ' hp · ' +
       (state.scores[player.id] || 0) +
-      (player.alive ? '' : ' · down')
+      (player.alive ? '' : ' · down') +
+      readyMark
     item.append(label)
     scoreEl.appendChild(item)
   })
   if (!state.over) {
     banner.hidden = true
     againButton.hidden = true
+    againButton.disabled = false
     const mineWeapon = mine && mine.weapon === 'knife'
       ? 'Knife (90°, 2 HP, faster). Click to slash.'
       : 'Gun (45°). Click to shoot.'
@@ -441,14 +528,22 @@ function showStealth(state) {
         ? 'You win the set ' + stealthScoreLine(state) + '.'
         : champ.name + ' wins the set ' + stealthScoreLine(state) + '.'
       : 'Set over.'
-  } else {
-    text += '. Next round…'
   }
+  const seated = state.players.some((player) => player.id === myId)
+  const readyCount = stealthReadyCount(state)
+  const need = state.players.length
+  text += '. Ready ' + readyCount + '/' + need
   banner.hidden = false
   banner.textContent = text
   tag.textContent = text
-  againButton.hidden = !(hosting && state.seriesOver)
-  againButton.textContent = 'Play again'
+  const iAmReady = Boolean(state.ready && state.ready[myId])
+  againButton.hidden = !seated
+  againButton.disabled = iAmReady
+  againButton.textContent = iAmReady
+    ? 'Waiting…'
+    : state.seriesOver
+      ? 'Ready for rematch'
+      : 'Ready'
 }
 
 function stopStealthLoop() {
@@ -459,21 +554,6 @@ function stopStealthLoop() {
 function clearStealthNext() {
   window.clearTimeout(stealthNextTimer)
   stealthNextTimer = 0
-}
-
-function queueNextStealthRound() {
-  clearStealthNext()
-  if (!hosting || !match || !match.over || match.seriesOver) return
-  stealthNextTimer = window.setTimeout(() => {
-    stealthNextTimer = 0
-    if (!hosting || !match || match.seriesOver) return
-    match = advanceStealthRound(match)
-    for (const key of Object.keys(stealthInputs)) delete stealthInputs[key]
-    showStealth(match)
-    broadcast()
-    stealthLast = performance.now()
-    timer = window.setInterval(stealthTick, 33)
-  }, 2200)
 }
 
 function stealthTick() {
@@ -494,10 +574,7 @@ function stealthTick() {
   })
   showStealth(match)
   broadcast()
-  if (match.over) {
-    stopStealthLoop()
-    if (!match.seriesOver) queueNextStealthRound()
-  }
+  if (match.over) stopStealthLoop()
 }
 
 function tick() {
@@ -646,11 +723,7 @@ function openRoom(code, asHost, isPublic, game) {
         play.hidden = false
         showBoard('stealth')
       }
-      const wasOver = match && match.over
       showStealth(payload)
-      if (payload.over && !wasOver && !payload.seriesOver) {
-        /* host advances; guest just waits for the next state */
-      }
       return
     }
     if (!payload.snakes) return
@@ -668,6 +741,10 @@ function openRoom(code, asHost, isPublic, game) {
   channel.on('broadcast', { event: 'move' }, ({ payload }) => {
     if (!hosting || !payload) return
     applyMove(payload.id, payload.index)
+  })
+  channel.on('broadcast', { event: 'stealth-ready' }, ({ payload }) => {
+    if (!hosting || roomGame !== 'stealth' || !payload || !payload.id) return
+    markStealthReady(payload.id)
   })
   channel.on('broadcast', { event: 'stealth' }, ({ payload }) => {
     if (!hosting || roomGame !== 'stealth' || !payload || !payload.id) return
@@ -809,20 +886,15 @@ startButton.addEventListener('click', () => {
 })
 
 againButton.addEventListener('click', () => {
+  if (roomGame === 'stealth' && match && match.over) {
+    requestStealthReady()
+    return
+  }
   if (!hosting || !match) return
   let people = []
   if (roomGame === 'ttt') {
     const sides = match.x.id === match.o.id ? [match.x] : [match.x, match.o]
     people = sides.filter((person) => roster().some((item) => item.id === person.id))
-  } else if (roomGame === 'stealth') {
-    const againstBot = match.players.some((player) => player.id === BOT_ID)
-    people = match.players
-      .map((player) => ({ id: player.id, name: player.name }))
-      .filter((person) => person.id === BOT_ID || roster().some((item) => item.id === person.id))
-    if (againstBot) {
-      const human = people.find((person) => person.id !== BOT_ID) || { id: myId, name: myName() }
-      people = [human, { id: BOT_ID, name: 'Bot' }]
-    }
   } else {
     people = match.snakes
       .map((snake) => ({ id: snake.id, name: snake.name }))
