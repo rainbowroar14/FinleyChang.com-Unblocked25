@@ -89,6 +89,18 @@ export function canSee(x, y, angle, tx, ty, fov = GUN_FOV) {
   return rayDistance(x, y, aim, dist) >= dist - 0.5
 }
 
+export function canSeePart(x, y, angle, tx, ty, radius, fov = GUN_FOV) {
+  if (canSee(x, y, angle, tx, ty, fov)) return true
+  const samples = 12
+  for (let i = 0; i < samples; i += 1) {
+    const spin = (i / samples) * Math.PI * 2
+    const px = tx + Math.cos(spin) * radius
+    const py = ty + Math.sin(spin) * radius
+    if (canSee(x, y, angle, px, py, fov)) return true
+  }
+  return false
+}
+
 function hitsRect(x, y, radius, rect) {
   const cx = Math.max(rect.x, Math.min(x, rect.x + rect.w))
   const cy = Math.max(rect.y, Math.min(y, rect.y + rect.h))
@@ -165,6 +177,7 @@ export function createStealthMatch(players, options = {}) {
     seriesOver: false,
     seriesWinner: null,
     slash: 0,
+    pings: [],
     players: seats.map((person, index) => {
       const spawn = STARTS[index]
       const weapon = person.id === loadout.knifeId ? 'knife' : 'gun'
@@ -271,6 +284,9 @@ export function stepStealth(state, inputs, dt) {
     seriesOver: false,
     seriesWinner: null,
     slash: Math.max(0, (state.slash || 0) - dt),
+    pings: (state.pings || [])
+      .map((ping) => ({ ...ping, age: (ping.age || 0) + dt }))
+      .filter((ping) => ping.age < (ping.life || 1)),
     players: state.players.map((player) => ({ ...player })),
     bullets: state.bullets.map((bullet) => ({ ...bullet })),
     scores: { ...state.scores },
@@ -293,6 +309,14 @@ export function stepStealth(state, inputs, dt) {
     }
     player.cool = Math.max(0, player.cool - dt)
     if (!input.fire || player.cool > 0 || next.over) return
+    next.pings.push({
+      x: player.x,
+      y: player.y,
+      color: player.color,
+      age: 0,
+      life: 1,
+      owner: player.id,
+    })
     if (player.weapon === 'knife') {
       player.cool = 0.45
       next.slash = 0.12
@@ -374,7 +398,12 @@ export function drawStealth(ctx, state, viewerId) {
     ctx.fillRect(wall.x, wall.y, wall.w, wall.h)
   })
   state.players.forEach((player) => {
-    if (player.id !== me.id && (!player.alive || !canSee(me.x, me.y, me.a, player.x, player.y, fov))) return
+    if (
+      player.id !== me.id &&
+      (!player.alive || !canSeePart(me.x, me.y, me.a, player.x, player.y, player.r || 9, fov))
+    ) {
+      return
+    }
     ctx.fillStyle = player.alive ? player.color : '#3c4038'
     ctx.beginPath()
     ctx.arc(player.x, player.y, 8, 0, Math.PI * 2)
@@ -384,11 +413,28 @@ export function drawStealth(ctx, state, viewerId) {
     ctx.fillRect(player.x + Math.cos(player.a) * 6 - 2, player.y + Math.sin(player.a) * 6 - 2, 4, 4)
   })
   state.bullets.forEach((bullet) => {
-    if (!canSee(me.x, me.y, me.a, bullet.x, bullet.y, fov)) return
+    if (!canSeePart(me.x, me.y, me.a, bullet.x, bullet.y, 3, fov)) return
     ctx.fillStyle = bullet.owner === me.id ? '#f4efe4' : '#e7c56a'
     ctx.fillRect(bullet.x - 2, bullet.y - 2, 4, 4)
   })
   ctx.restore()
+  ;(state.pings || []).forEach((ping) => {
+    if (ping.owner === me.id) return
+    const alpha = Math.max(0, 1 - (ping.age || 0) / (ping.life || 1))
+    ctx.save()
+    ctx.globalAlpha = alpha
+    ctx.strokeStyle = ping.color
+    ctx.fillStyle = ping.color
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(ping.x, ping.y, 11, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.globalAlpha = alpha * 0.4
+    ctx.beginPath()
+    ctx.arc(ping.x, ping.y, 11, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  })
   if (me.weapon === 'knife' && state.slash > 0) {
     ctx.save()
     ctx.translate(me.x, me.y)
