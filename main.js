@@ -1,6 +1,6 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 import { createTtt, place } from './ttt.js?v=1'
-import { createStealthMatch, stepStealth, drawStealth } from './stealth.js?v=3'
+import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID } from './stealth.js?v=4'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
@@ -117,7 +117,7 @@ function selectGame(game) {
     tag.textContent = picked === 'ttt'
       ? 'Tic Tac Toe. Host a public game or join one.'
       : picked === 'stealth'
-        ? 'Stealth 1v1. WASD to move. Your light follows the cursor.'
+        ? 'Stealth. Fight a bot alone, or host a 1v1.'
         : 'Snake. Host a public game or join one.'
   }
 }
@@ -192,11 +192,11 @@ function refreshLobby() {
         : 'Room ' + roomCode + '. X goes first.'
     } else waitEl.textContent = 'Waiting for the host to start.'
   } else if (roomGame === 'stealth') {
-    startButton.disabled = count < 2
-    startButton.textContent = 'Start 1v1'
+    startButton.disabled = count < 1
+    startButton.textContent = count < 2 ? 'Vs bot' : 'Start 1v1'
     if (hosting) {
       waitEl.textContent = count < 2
-        ? 'Room ' + roomCode + '. Wait for one more player.'
+        ? 'Room ' + roomCode + '. Fight a bot, or wait for a player.'
         : 'Room ' + roomCode + '. Ready to start.'
     } else waitEl.textContent = 'Waiting for the host to start.'
   } else {
@@ -427,6 +427,9 @@ function stealthTick() {
   const dt = Math.min(0.05, (now - stealthLast) / 1000 || 0.033)
   stealthLast = now
   stealthInputs[myId] = localStealthInput()
+  if (match.players.some((player) => player.id === BOT_ID)) {
+    stealthInputs[BOT_ID] = botInput(match, BOT_ID)
+  }
   match = stepStealth(match, stealthInputs, dt)
   Object.keys(stealthInputs).forEach((id) => {
     if (stealthInputs[id]) stealthInputs[id].fire = false
@@ -717,8 +720,11 @@ document.getElementById('join').addEventListener('click', () => {
 
 startButton.addEventListener('click', () => {
   if (!hosting || match) return
-  const people = roster().slice(0, maxPlayers())
+  let people = roster().slice(0, maxPlayers())
   if (!people.length) return
+  if (roomGame === 'stealth' && people.length < 2) {
+    people = [people[0], { id: BOT_ID, name: 'Bot' }]
+  }
   channel.send({ type: 'broadcast', event: 'start', payload: { players: people } })
   begin(people)
 })
@@ -730,9 +736,14 @@ againButton.addEventListener('click', () => {
     const sides = match.x.id === match.o.id ? [match.x] : [match.x, match.o]
     people = sides.filter((person) => roster().some((item) => item.id === person.id))
   } else if (roomGame === 'stealth') {
+    const againstBot = match.players.some((player) => player.id === BOT_ID)
     people = match.players
       .map((player) => ({ id: player.id, name: player.name }))
-      .filter((person) => roster().some((item) => item.id === person.id))
+      .filter((person) => person.id === BOT_ID || roster().some((item) => item.id === person.id))
+    if (againstBot) {
+      const human = people.find((person) => person.id !== BOT_ID) || { id: myId, name: myName() }
+      people = [human, { id: BOT_ID, name: 'Bot' }]
+    }
   } else {
     people = match.snakes
       .map((snake) => ({ id: snake.id, name: snake.name }))

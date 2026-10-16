@@ -124,6 +124,8 @@ function nearSegment(x1, y1, x2, y2, px, py) {
   return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t))
 }
 
+export const BOT_ID = 'stealth-bot'
+
 export function createStealthMatch(players) {
   const seats = players.slice(0, 2)
   return {
@@ -145,6 +147,41 @@ export function createStealthMatch(players) {
       }
     }),
     bullets: [],
+  }
+}
+
+export function botInput(state, botId) {
+  const empty = { w: false, a: false, s: false, d: false, aim: 0, fire: false }
+  const bot = state.players.find((player) => player.id === botId)
+  const foe = state.players.find((player) => player.id !== botId && player.alive)
+  if (!bot || !bot.alive || !foe) return empty
+  const aim = Math.atan2(foe.y - bot.y, foe.x - bot.x)
+  const see = canSee(bot.x, bot.y, aim, foe.x, foe.y)
+  const dx = foe.x - bot.x
+  const dy = foe.y - bot.y
+  let mx = 0
+  let my = 0
+  if (see) {
+    if (Math.hypot(dx, dy) < 90) {
+      mx = dx > 0 ? -1 : 1
+      my = dy > 0 ? -1 : 1
+    } else {
+      mx = dx > 12 ? 1 : dx < -12 ? -1 : 0
+      my = dy > 12 ? 1 : dy < -12 ? -1 : 0
+    }
+  } else {
+    mx = dx > 10 ? 1 : dx < -10 ? -1 : 0
+    my = dy > 10 ? 1 : dy < -10 ? -1 : 0
+    if (Math.abs(dx) > Math.abs(dy) * 1.4) my = 0
+    else if (Math.abs(dy) > Math.abs(dx) * 1.4) mx = 0
+  }
+  return {
+    w: my < 0,
+    a: mx < 0,
+    s: my > 0,
+    d: mx > 0,
+    aim,
+    fire: see,
   }
 }
 
