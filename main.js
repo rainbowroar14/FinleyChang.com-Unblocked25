@@ -575,6 +575,10 @@ document.getElementById('pick').addEventListener('click', (event) => {
 document.getElementById('host').addEventListener('click', () => {
   saveName()
   showError('')
+  if (picked === 'stealth') {
+    startStealth()
+    return
+  }
   openRoom(alphabetCode(), true, true, picked)
 })
 
@@ -598,6 +602,12 @@ startButton.addEventListener('click', () => {
 })
 
 againButton.addEventListener('click', () => {
+  if (roomGame === 'stealth') {
+    againButton.hidden = true
+    banner.hidden = true
+    ensureStealth().start()
+    return
+  }
   if (!hosting || !match) return
   let people = []
   if (roomGame === 'ttt') {
@@ -627,12 +637,100 @@ const KEYS = {
   d: 'right',
 }
 
+const STEALTH_KEYS = {
+  arrowup: 'forward',
+  w: 'forward',
+  arrowdown: 'back',
+  s: 'back',
+  arrowleft: 'left',
+  a: 'left',
+  arrowright: 'right',
+  d: 'right',
+  ' ': 'shoot',
+}
+
+let stealthGame = null
+let stealthReport = ''
+
+function reportStealth(info) {
+  const key = (info.over || 'play') + ':' + info.left
+  if (key === stealthReport) return
+  stealthReport = key
+  scoreEl.replaceChildren()
+  const item = document.createElement('li')
+  const label = document.createElement('span')
+  label.textContent = info.over === 'win' ? 'Floor clear' : info.over === 'lose' ? 'Caught' : 'Guards left · ' + info.left
+  item.append(label)
+  scoreEl.appendChild(item)
+  tag.textContent = info.over === 'win'
+    ? 'You cleared the floor.'
+    : info.over === 'lose'
+      ? 'They saw you.'
+      : 'Look ahead. Walls block your view and your shots.'
+  banner.hidden = !info.over
+  banner.textContent = tag.textContent
+  againButton.hidden = !info.over
+}
+
+function ensureStealth() {
+  if (!stealthGame) stealthGame = createStealth(document.getElementById('stealth'), reportStealth)
+  return stealthGame
+}
+
+function startStealth() {
+  roomGame = 'stealth'
+  nameInput.disabled = true
+  lobby.hidden = true
+  play.hidden = false
+  showBoard('stealth')
+  stealthReport = ''
+  banner.hidden = true
+  againButton.hidden = true
+  ensureStealth().start()
+}
+
 window.addEventListener('keydown', (event) => {
+  if (roomGame === 'stealth') {
+    const act = STEALTH_KEYS[event.key.toLowerCase()]
+    if (!act) return
+    event.preventDefault()
+    if (act === 'shoot') {
+      if (!event.repeat) ensureStealth().shoot()
+      return
+    }
+    ensureStealth().hold(act, true)
+    return
+  }
   const dir = KEYS[event.key.toLowerCase()]
   if (!dir || roomGame !== 'snake' || !match) return
   event.preventDefault()
   steer(dir)
 })
+
+window.addEventListener('keyup', (event) => {
+  if (roomGame !== 'stealth') return
+  const act = STEALTH_KEYS[event.key.toLowerCase()]
+  if (!act || act === 'shoot') return
+  ensureStealth().hold(act, false)
+})
+
+const stealthPad = document.getElementById('stealth-pad')
+stealthPad.addEventListener('pointerdown', (event) => {
+  const button = event.target.closest('button')
+  if (!button || !button.dataset.act) return
+  event.preventDefault()
+  button.setPointerCapture(event.pointerId)
+  if (button.dataset.act === 'shoot') ensureStealth().shoot()
+  else ensureStealth().hold(button.dataset.act, true)
+})
+stealthPad.addEventListener('pointerup', releaseStealth)
+stealthPad.addEventListener('pointercancel', releaseStealth)
+
+function releaseStealth(event) {
+  const button = event.target.closest('button')
+  if (!button || !button.dataset.act || button.dataset.act === 'shoot') return
+  ensureStealth().hold(button.dataset.act, false)
+}
 
 pad.addEventListener('click', (event) => {
   const dir = event.target.dataset && event.target.dataset.dir
