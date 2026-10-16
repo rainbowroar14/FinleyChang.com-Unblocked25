@@ -1,8 +1,10 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
+import { createTtt, place } from './ttt.js?v=1'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
 const CELL = 32
+const GAME_LABEL = { snake: 'Snake', ttt: 'Tic Tac Toe' }
 
 const lobby = document.getElementById('lobby')
 const waiting = document.getElementById('waiting')
@@ -11,6 +13,7 @@ const nameInput = document.getElementById('name')
 const roomInput = document.getElementById('room')
 const codeEl = document.getElementById('code')
 const tag = document.getElementById('tag')
+const mark = document.getElementById('mark')
 const errorEl = document.getElementById('error')
 const playersEl = document.getElementById('players')
 const scoreEl = document.getElementById('score')
@@ -18,6 +21,9 @@ const startButton = document.getElementById('start')
 const againButton = document.getElementById('again')
 const waitEl = document.getElementById('wait')
 const banner = document.getElementById('banner')
+const helpEl = document.getElementById('help')
+const pad = document.getElementById('pad')
+const grid = document.getElementById('grid')
 const canvas = document.getElementById('board')
 canvas.width = COLS * CELL
 canvas.height = ROWS * CELL
@@ -36,9 +42,11 @@ let hosting = false
 let publicGame = false
 let hostId = ''
 let roomCode = ''
+let roomGame = 'snake'
 let joinedAt = 0
 let match = null
 let timer = 0
+let picked = 'snake'
 const desired = {}
 const gamesEl = document.getElementById('games')
 const gamesEmpty = document.getElementById('games-empty')
@@ -74,6 +82,29 @@ function alphabetCode() {
   return code
 }
 
+function gameOf(value) {
+  return value === 'ttt' ? 'ttt' : 'snake'
+}
+
+function maxPlayers() {
+  return roomGame === 'ttt' ? 2 : 4
+}
+
+function selectGame(game) {
+  picked = gameOf(game)
+  localStorage.setItem('game-pick', picked)
+  document.getElementById('pick-snake').classList.toggle('on', picked === 'snake')
+  document.getElementById('pick-ttt').classList.toggle('on', picked === 'ttt')
+  document.getElementById('pick-snake').setAttribute('aria-pressed', String(picked === 'snake'))
+  document.getElementById('pick-ttt').setAttribute('aria-pressed', String(picked === 'ttt'))
+  if (!channel) {
+    mark.textContent = GAME_LABEL[picked]
+    tag.textContent = picked === 'ttt'
+      ? 'Tic Tac Toe. Host a public game or join one.'
+      : 'Snake. Host a public game or join one.'
+  }
+}
+
 function roster() {
   if (!channel) return []
   const people = []
@@ -88,7 +119,7 @@ function roster() {
 function paintRoster(list, target, inGame) {
   target.replaceChildren()
   list.forEach((person, index) => {
-    const snake = match && match.snakes.find((item) => item.id === person.id)
+    const snake = match && match.snakes && match.snakes.find((item) => item.id === person.id)
     const item = document.createElement('li')
     const swatch = document.createElement('span')
     swatch.className = 'swatch'
@@ -112,18 +143,43 @@ function paintRoster(list, target, inGame) {
   })
 }
 
+function paintWaiting(people) {
+  if (roomGame !== 'ttt') {
+    paintRoster(people.slice(0, 4).concat(people.slice(4)), playersEl, false)
+    return
+  }
+  playersEl.replaceChildren()
+  people.forEach((person, index) => {
+    const item = document.createElement('li')
+    const label = document.createElement('span')
+    const seat = index === 0 ? 'X' : index === 1 ? 'O' : 'watching'
+    label.textContent = person.name + (person.host ? ' · host' : '') + ' · ' + seat
+    item.append(label)
+    playersEl.appendChild(item)
+  })
+}
+
 function refreshLobby() {
   const people = roster()
-  paintRoster(people.slice(0, 4).concat(people.slice(4)), playersEl, false)
-  const count = Math.min(4, people.length)
+  paintWaiting(people)
+  const count = Math.min(maxPlayers(), people.length)
   startButton.hidden = !hosting
   startButton.disabled = count < 1
-  startButton.textContent = count <= 1 ? 'Start solo' : 'Start ' + count + ' players'
-  if (hosting) {
-    waitEl.textContent = count <= 1
-      ? 'Room ' + roomCode + '. Start solo, or wait for someone from the list.'
-      : 'Room ' + roomCode + '. Apples on the board: ' + count + '.'
-  } else waitEl.textContent = 'Waiting for the host to start.'
+  if (roomGame === 'ttt') {
+    startButton.textContent = count <= 1 ? 'Play here' : 'Start'
+    if (hosting) {
+      waitEl.textContent = count <= 1
+        ? 'Room ' + roomCode + '. Wait for an opponent, or play both sides here.'
+        : 'Room ' + roomCode + '. X goes first.'
+    } else waitEl.textContent = 'Waiting for the host to start.'
+  } else {
+    startButton.textContent = count <= 1 ? 'Start solo' : 'Start ' + count + ' players'
+    if (hosting) {
+      waitEl.textContent = count <= 1
+        ? 'Room ' + roomCode + '. Start solo, or wait for someone from the list.'
+        : 'Room ' + roomCode + '. Apples on the board: ' + count + '.'
+    } else waitEl.textContent = 'Waiting for the host to start.'
+  }
   if (publicGame && !match) advertise()
 }
 
@@ -201,6 +257,18 @@ function outcomeText(state) {
   return winner.name + ' wins. ' + fruits + ' fruits.'
 }
 
+function showBoard(game) {
+  const ttt = game === 'ttt'
+  document.getElementById('snake-stage').hidden = ttt
+  document.getElementById('ttt-stage').hidden = !ttt
+  pad.hidden = ttt
+  helpEl.textContent = ttt
+    ? 'Tap a square on your turn. Three in a row wins.'
+    : 'Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.'
+  banner.classList.toggle('under', ttt)
+  mark.textContent = GAME_LABEL[game] || 'Games'
+}
+
 function showMatch(state) {
   match = state
   draw(state)
@@ -221,13 +289,57 @@ function showMatch(state) {
   else tag.textContent = state.apples.length + ' apples on a 15×15 grid.'
 }
 
+function tttText(state) {
+  const local = state.x.id === state.o.id
+  if (!state.over) {
+    const side = state.turn === 'x' ? state.x : state.o
+    if (local) return side.name + ' plays ' + state.turn.toUpperCase() + '.'
+    if (side.id === myId) return 'Your turn.'
+    return side.name + "'s turn."
+  }
+  if (state.winner === 'draw') return 'Draw.'
+  const side = state.winner === 'x' ? state.x : state.o
+  if (local) return state.winner.toUpperCase() + ' wins.'
+  if (side.id === myId) return 'You win.'
+  return side.name + ' wins.'
+}
+
+function showTtt(state) {
+  match = state
+  const line = new Set(state.line || [])
+  const side = state.turn === 'x' ? state.x : state.o
+  const mine = side.id === myId
+  grid.querySelectorAll('button').forEach((button) => {
+    const index = Number(button.dataset.i)
+    const markCell = state.cells[index]
+    button.textContent = markCell ? markCell.toUpperCase() : ''
+    button.className = (markCell || '') + (line.has(index) ? ' win' : '')
+    button.disabled = Boolean(markCell) || state.over || !mine
+  })
+  scoreEl.replaceChildren()
+  ;['x', 'o'].forEach((key) => {
+    const player = state[key]
+    const item = document.createElement('li')
+    if (!state.over && state.turn === key) item.className = 'turn'
+    const label = document.createElement('span')
+    label.textContent = player.name + ' · ' + key.toUpperCase()
+    item.append(label)
+    scoreEl.appendChild(item)
+  })
+  const text = tttText(state)
+  banner.hidden = !state.over
+  banner.textContent = text
+  againButton.hidden = !(hosting && state.over)
+  tag.textContent = text
+}
+
 function broadcast() {
   if (!channel || !match) return
   channel.send({ type: 'broadcast', event: 'state', payload: match })
 }
 
 function tick() {
-  if (!hosting || !match || match.over) return
+  if (!hosting || !match || match.over || roomGame !== 'snake') return
   match = step(match, desired)
   showMatch(match)
   broadcast()
@@ -237,8 +349,18 @@ function tick() {
   }
 }
 
+function applyMove(id, index) {
+  if (roomGame !== 'ttt' || !match || match.over) return
+  const next = place(match, Number(index), id)
+  if (next === match) return
+  match = next
+  showTtt(match)
+  broadcast()
+}
+
 function begin(players) {
-  match = createMatch(players)
+  window.clearInterval(timer)
+  timer = 0
   for (const key of Object.keys(desired)) delete desired[key]
   publicGame = false
   advertised = ''
@@ -246,15 +368,20 @@ function begin(players) {
   nameInput.disabled = true
   lobby.hidden = true
   play.hidden = false
+  showBoard(roomGame)
+  if (roomGame === 'ttt') {
+    match = createTtt(players)
+    showTtt(match)
+    broadcast()
+    return
+  }
+  match = createMatch(players)
   showMatch(match)
   broadcast()
-  if (hosting) {
-    window.clearInterval(timer)
-    timer = window.setInterval(tick, 180)
-  }
+  if (hosting) timer = window.setInterval(tick, 180)
 }
 
-function openRoom(code, asHost, isPublic) {
+function openRoom(code, asHost, isPublic, game) {
   const realtime = gameClient()
   if (!realtime) {
     showError('The game server did not load.')
@@ -264,8 +391,9 @@ function openRoom(code, asHost, isPublic) {
   hosting = asHost
   publicGame = Boolean(isPublic)
   roomCode = code
+  roomGame = gameOf(game)
   joinedAt = Date.now()
-  channel = realtime.channel('snake-' + code, {
+  channel = realtime.channel((roomGame === 'ttt' ? 'ttt-' : 'snake-') + code, {
     config: { broadcast: { self: false }, presence: { key: myId } },
   })
   channel.on('presence', { event: 'sync' }, () => {
@@ -275,7 +403,7 @@ function openRoom(code, asHost, isPublic) {
   })
   channel.on('presence', { event: 'leave' }, ({ key }) => {
     if (!hosting && key === hostId) tag.textContent = 'The host left.'
-    if (hosting && match && !match.over) {
+    if (hosting && match && !match.over && roomGame === 'snake') {
       const snake = match.snakes.find((item) => item.id === key && item.alive)
       if (snake) {
         match = markDead(match, key)
@@ -287,6 +415,14 @@ function openRoom(code, asHost, isPublic) {
         }
       }
     }
+    if (hosting && match && !match.over && roomGame === 'ttt') {
+      const other = match.x.id === key ? match.o : match.o.id === key ? match.x : null
+      if (other && other.id !== key) {
+        match = { ...match, over: true, winner: other === match.x ? 'x' : 'o', line: match.line }
+        showTtt(match)
+        broadcast()
+      }
+    }
     if (!match) refreshLobby()
   })
   channel.on('broadcast', { event: 'start' }, ({ payload }) => {
@@ -294,16 +430,32 @@ function openRoom(code, asHost, isPublic) {
     begin(payload.players)
   })
   channel.on('broadcast', { event: 'state' }, ({ payload }) => {
-    if (hosting || !payload || !payload.snakes) return
+    if (hosting || !payload) return
+    if (roomGame === 'ttt') {
+      if (!payload.cells) return
+      if (lobby.hidden === false) {
+        lobby.hidden = true
+        play.hidden = false
+        showBoard('ttt')
+      }
+      showTtt(payload)
+      return
+    }
+    if (!payload.snakes) return
     if (lobby.hidden === false) {
       lobby.hidden = true
       play.hidden = false
+      showBoard('snake')
     }
     showMatch(payload)
   })
   channel.on('broadcast', { event: 'dir' }, ({ payload }) => {
-    if (!hosting || !payload || !payload.id || !DIRS[payload.dir]) return
+    if (!hosting || roomGame !== 'snake' || !payload || !payload.id || !DIRS[payload.dir]) return
     desired[payload.id] = payload.dir
+  })
+  channel.on('broadcast', { event: 'move' }, ({ payload }) => {
+    if (!hosting || !payload) return
+    applyMove(payload.id, payload.index)
   })
   channel.subscribe(async (status) => {
     if (status !== 'SUBSCRIBED') return
@@ -312,6 +464,7 @@ function openRoom(code, asHost, isPublic) {
     waiting.hidden = false
     codeEl.hidden = false
     codeEl.textContent = code
+    mark.textContent = GAME_LABEL[roomGame]
     tag.textContent = hosting ? 'You are the host. Leave this tab open.' : 'In room ' + code
     refreshLobby()
     if (publicGame) advertise()
@@ -324,27 +477,32 @@ function renderGames() {
   for (const [id, metas] of Object.entries(lobbyChannel.presenceState())) {
     const meta = metas[0] || {}
     if (!meta.open || !meta.code || id === myId) continue
+    const game = gameOf(meta.game)
+    const max = game === 'ttt' ? 2 : 4
     games.push({
+      game,
       code: meta.code,
       name: meta.name || 'Player',
-      count: Math.max(1, Math.min(4, Number(meta.count) || 1)),
+      count: Math.max(1, Math.min(max, Number(meta.count) || 1)),
+      max,
     })
   }
-  games.sort((a, b) => a.code.localeCompare(b.code))
+  games.sort((a, b) => a.game.localeCompare(b.game) || a.code.localeCompare(b.code))
   gamesEl.replaceChildren()
   gamesEmpty.hidden = games.length > 0
   games.forEach((game) => {
     const item = document.createElement('li')
     const label = document.createElement('span')
-    label.textContent = game.name + ' · ' + game.code + ' · ' + game.count + '/4'
+    label.textContent = game.name + ' · ' + GAME_LABEL[game.game] + ' · ' + game.code + ' · ' + game.count + '/' + game.max
     const button = document.createElement('button')
     button.type = 'button'
-    button.textContent = game.count >= 4 ? 'Full' : 'Join'
-    button.disabled = game.count >= 4
+    button.textContent = game.count >= game.max ? 'Full' : 'Join'
+    button.disabled = game.count >= game.max
     button.addEventListener('click', () => {
       saveName()
       showError('')
-      openRoom(game.code, false, false)
+      selectGame(game.game)
+      openRoom(game.code, false, false, game.game)
     })
     item.append(label, button)
     gamesEl.appendChild(item)
@@ -353,8 +511,8 @@ function renderGames() {
 
 function advertise() {
   if (!publicGame || match || !roomCode) return
-  const count = Math.max(1, Math.min(4, roster().length || 1))
-  const payload = { open: true, code: roomCode, name: myName(), count }
+  const count = Math.max(1, Math.min(maxPlayers(), roster().length || 1))
+  const payload = { open: true, code: roomCode, name: myName(), count, game: roomGame }
   const next = JSON.stringify(payload)
   if (!lobbyChannel || lobbyChannel.state === 'closed' || lobbyChannel.state === 'errored') {
     advertised = ''
@@ -386,17 +544,23 @@ function saveName() {
 }
 
 function steer(dir) {
-  if (!match || match.over) return
+  if (roomGame !== 'snake' || !match || match.over) return
   const mine = match.snakes.find((snake) => snake.id === myId)
   if (!mine || !mine.alive || !DIRS[dir]) return
   if (hosting) desired[myId] = dir
   else if (channel) channel.send({ type: 'broadcast', event: 'dir', payload: { id: myId, dir } })
 }
 
+document.getElementById('pick').addEventListener('click', (event) => {
+  const card = event.target.closest('button')
+  if (!card || !card.dataset.game) return
+  selectGame(card.dataset.game)
+})
+
 document.getElementById('host').addEventListener('click', () => {
   saveName()
   showError('')
-  openRoom(alphabetCode(), true, true)
+  openRoom(alphabetCode(), true, true, picked)
 })
 
 document.getElementById('join').addEventListener('click', () => {
@@ -407,27 +571,34 @@ document.getElementById('join').addEventListener('click', () => {
   }
   saveName()
   showError('')
-  openRoom(code, false, false)
+  openRoom(code, false, false, picked)
 })
 
 startButton.addEventListener('click', () => {
   if (!hosting || match) return
-  const people = roster().slice(0, 4)
+  const people = roster().slice(0, maxPlayers())
   if (!people.length) return
   channel.send({ type: 'broadcast', event: 'start', payload: { players: people } })
   begin(people)
 })
 
 againButton.addEventListener('click', () => {
-  if (!hosting) return
-  const people = (match ? match.snakes : []).map((snake) => ({ id: snake.id, name: snake.name }))
-  const still = people.filter((person) => roster().some((item) => item.id === person.id))
-  if (!still.length) {
+  if (!hosting || !match) return
+  let people = []
+  if (roomGame === 'ttt') {
+    const sides = match.x.id === match.o.id ? [match.x] : [match.x, match.o]
+    people = sides.filter((person) => roster().some((item) => item.id === person.id))
+  } else {
+    people = match.snakes
+      .map((snake) => ({ id: snake.id, name: snake.name }))
+      .filter((person) => roster().some((item) => item.id === person.id))
+  }
+  if (!people.length) {
     tag.textContent = 'Stay in the room to play again.'
     return
   }
-  channel.send({ type: 'broadcast', event: 'start', payload: { players: still } })
-  begin(still)
+  channel.send({ type: 'broadcast', event: 'start', payload: { players: people } })
+  begin(people)
 })
 
 const KEYS = {
@@ -443,14 +614,22 @@ const KEYS = {
 
 window.addEventListener('keydown', (event) => {
   const dir = KEYS[event.key.toLowerCase()]
-  if (!dir || !match) return
+  if (!dir || roomGame !== 'snake' || !match) return
   event.preventDefault()
   steer(dir)
 })
 
-document.getElementById('pad').addEventListener('click', (event) => {
+pad.addEventListener('click', (event) => {
   const dir = event.target.dataset && event.target.dataset.dir
   if (dir) steer(dir)
+})
+
+grid.addEventListener('click', (event) => {
+  const button = event.target.closest('button')
+  if (!button || button.disabled) return
+  const index = Number(button.dataset.i)
+  if (hosting) applyMove(myId, index)
+  else if (channel) channel.send({ type: 'broadcast', event: 'move', payload: { id: myId, index } })
 })
 
 nameInput.addEventListener('input', () => {
@@ -460,4 +639,5 @@ nameInput.addEventListener('input', () => {
   if (publicGame) advertise()
 })
 
+selectGame(localStorage.getItem('game-pick') || 'snake')
 connectLobby()

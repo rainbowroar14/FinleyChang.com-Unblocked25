@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Snake</title>
+    <title>Games</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314120e'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23e23d3d'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="styles.css?v=3" />
+    <link rel="stylesheet" href="styles.css?v=4" />
   </head>
   <body>
     <header class="top">
       <div>
-        <p class="mark">Snake</p>
-        <p class="tag" id="tag">Set your name, then host a public game or join one.</p>
+        <p class="mark" id="mark">Games</p>
+        <p class="tag" id="tag">Pick a game, set your name, then host or join.</p>
       </div>
       <label class="name-label">
         Name
@@ -22,6 +22,16 @@
 
     <section class="lobby" id="lobby">
       <form id="setup">
+        <div class="pick" id="pick">
+          <button type="button" class="game-card on" data-game="snake" id="pick-snake" aria-pressed="true">
+            <span class="game-name">Snake</span>
+            <span class="game-meta">Up to 4</span>
+          </button>
+          <button type="button" class="game-card" data-game="ttt" id="pick-ttt" aria-pressed="false">
+            <span class="game-name">Tic Tac Toe</span>
+            <span class="game-meta">2 players</span>
+          </button>
+        </div>
         <div class="row">
           <button type="button" id="host" class="primary">Host public</button>
         </div>
@@ -29,7 +39,7 @@
           <input id="room" maxlength="4" placeholder="Code" aria-label="Room code" autocapitalize="characters" />
           <button type="button" id="join">Join</button>
         </div>
-        <p class="note">Public games show up in the list. You can still join with a code.</p>
+        <p class="note">Pick a game to host. Join a row below, or enter a code for the game you picked.</p>
         <p class="error" id="error" hidden></p>
         <p class="list-title">Open games</p>
         <ul class="games" id="games"></ul>
@@ -43,13 +53,28 @@
     </section>
 
     <section class="play" id="play" hidden>
-      <div class="stage">
-        <canvas id="board" width="480" height="480"></canvas>
+      <div class="board-wrap">
+        <div class="stage" id="snake-stage">
+          <canvas id="board" width="480" height="480"></canvas>
+        </div>
+        <div class="stage" id="ttt-stage" hidden>
+          <div class="ttt" id="grid">
+            <button type="button" data-i="0" aria-label="Top left"></button>
+            <button type="button" data-i="1" aria-label="Top"></button>
+            <button type="button" data-i="2" aria-label="Top right"></button>
+            <button type="button" data-i="3" aria-label="Left"></button>
+            <button type="button" data-i="4" aria-label="Center"></button>
+            <button type="button" data-i="5" aria-label="Right"></button>
+            <button type="button" data-i="6" aria-label="Bottom left"></button>
+            <button type="button" data-i="7" aria-label="Bottom"></button>
+            <button type="button" data-i="8" aria-label="Bottom right"></button>
+          </div>
+        </div>
         <p class="banner" id="banner" hidden></p>
       </div>
       <aside>
         <ol class="players" id="score"></ol>
-        <p class="help">Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.</p>
+        <p class="help" id="help">Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.</p>
         <div class="pad" id="pad">
           <button type="button" data-dir="up" aria-label="Up">↑</button>
           <button type="button" data-dir="left" aria-label="Left">←</button>
@@ -61,6 +86,6 @@
     </section>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-    <script type="module" src="main.js?v=7"></script>
+    <script type="module" src="main.js?v=11"></script>
   </body>
 </html>
