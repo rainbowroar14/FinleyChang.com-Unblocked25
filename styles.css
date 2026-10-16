@@ -195,8 +195,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 #snake-stage[hidden],
 #ttt-stage[hidden],
 #stealth-stage[hidden],
-#pad[hidden],
-#stealth-pad[hidden] {
+#pad[hidden] {
   display: none;
 }
 
@@ -282,11 +281,9 @@ canvas {
 
 .pad button { font-size: 20px; padding: 12px; }
 
-.pad.shoot { grid-template-columns: 1fr 1fr 1fr; }
-
-.pad.shoot .wide { grid-column: 1 / -1; }
-
 input:disabled { opacity: 0.45; }
+
+#stealth { cursor: crosshair; touch-action: none; }
 
 @media (max-width: 800px) {
   .play { grid-template-columns: 1fr; }

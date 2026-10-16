@@ -1,6 +1,6 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 import { createTtt, place } from './ttt.js?v=1'
-import { createStealth } from './stealth.js?v=2'
+import { createStealthMatch, stepStealth, drawStealth } from './stealth.js?v=3'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
@@ -26,9 +26,11 @@ const helpEl = document.getElementById('help')
 const pad = document.getElementById('pad')
 const grid = document.getElementById('grid')
 const canvas = document.getElementById('board')
+const stealthCanvas = document.getElementById('stealth')
 canvas.width = COLS * CELL
 canvas.height = ROWS * CELL
 const ctx = canvas.getContext('2d')
+const stealthCtx = stealthCanvas.getContext('2d')
 
 const myId = localStorage.getItem('snake-id') || crypto.randomUUID()
 localStorage.setItem('snake-id', myId)
@@ -47,8 +49,13 @@ let roomGame = 'snake'
 let joinedAt = 0
 let match = null
 let timer = 0
+let stealthLast = 0
 let picked = 'snake'
 const desired = {}
+const stealthInputs = {}
+const stealthHeld = { w: false, a: false, s: false, d: false }
+let stealthAim = -Math.PI / 2
+let stealthFire = false
 const gamesEl = document.getElementById('games')
 const gamesEmpty = document.getElementById('games-empty')
 
@@ -89,7 +96,7 @@ function gameOf(value) {
 }
 
 function maxPlayers() {
-  return roomGame === 'ttt' ? 2 : 4
+  return roomGame === 'snake' ? 4 : 2
 }
 
 function selectGame(game) {
@@ -101,18 +108,16 @@ function selectGame(game) {
     card.classList.toggle('on', on)
     card.setAttribute('aria-pressed', String(on))
   })
-  document.getElementById('host').textContent = picked === 'stealth' ? 'Play' : 'Host public'
-  roomInput.disabled = picked === 'stealth'
-  document.getElementById('join').disabled = picked === 'stealth'
-  document.getElementById('blurb').textContent = picked === 'stealth'
-    ? 'Stealth is played on this screen. Pick Snake or Tic Tac Toe to host or join.'
-    : 'Pick a game to host. Join a row below, or enter a code for the game you picked.'
+  document.getElementById('host').textContent = 'Host public'
+  roomInput.disabled = false
+  document.getElementById('join').disabled = false
+  document.getElementById('blurb').textContent = 'Pick a game to host. Join a row below, or enter a code for the game you picked.'
   if (!channel) {
     mark.textContent = GAME_LABEL[picked]
     tag.textContent = picked === 'ttt'
       ? 'Tic Tac Toe. Host a public game or join one.'
       : picked === 'stealth'
-        ? 'Stealth. You only see 45° ahead. Walls block sight and bullets.'
+        ? 'Stealth 1v1. WASD to move. Your light follows the cursor.'
         : 'Snake. Host a public game or join one.'
   }
 }
@@ -156,7 +161,7 @@ function paintRoster(list, target, inGame) {
 }
 
 function paintWaiting(people) {
-  if (roomGame !== 'ttt') {
+  if (roomGame === 'snake') {
     paintRoster(people.slice(0, 4).concat(people.slice(4)), playersEl, false)
     return
   }
@@ -164,7 +169,9 @@ function paintWaiting(people) {
   people.forEach((person, index) => {
     const item = document.createElement('li')
     const label = document.createElement('span')
-    const seat = index === 0 ? 'X' : index === 1 ? 'O' : 'watching'
+    let seat = 'watching'
+    if (roomGame === 'ttt') seat = index === 0 ? 'X' : index === 1 ? 'O' : 'watching'
+    else if (roomGame === 'stealth') seat = index < 2 ? 'player' : 'watching'
     label.textContent = person.name + (person.host ? ' · host' : '') + ' · ' + seat
     item.append(label)
     playersEl.appendChild(item)
@@ -176,15 +183,24 @@ function refreshLobby() {
   paintWaiting(people)
   const count = Math.min(maxPlayers(), people.length)
   startButton.hidden = !hosting
-  startButton.disabled = count < 1
   if (roomGame === 'ttt') {
+    startButton.disabled = count < 1
     startButton.textContent = count <= 1 ? 'Play here' : 'Start'
     if (hosting) {
       waitEl.textContent = count <= 1
         ? 'Room ' + roomCode + '. Wait for an opponent, or play both sides here.'
         : 'Room ' + roomCode + '. X goes first.'
     } else waitEl.textContent = 'Waiting for the host to start.'
+  } else if (roomGame === 'stealth') {
+    startButton.disabled = count < 2
+    startButton.textContent = 'Start 1v1'
+    if (hosting) {
+      waitEl.textContent = count < 2
+        ? 'Room ' + roomCode + '. Wait for one more player.'
+        : 'Room ' + roomCode + '. Ready to start.'
+    } else waitEl.textContent = 'Waiting for the host to start.'
   } else {
+    startButton.disabled = count < 1
     startButton.textContent = count <= 1 ? 'Start solo' : 'Start ' + count + ' players'
     if (hosting) {
       waitEl.textContent = count <= 1
@@ -274,11 +290,10 @@ function showBoard(game) {
   document.getElementById('ttt-stage').hidden = game !== 'ttt'
   document.getElementById('stealth-stage').hidden = game !== 'stealth'
   pad.hidden = game !== 'snake'
-  document.getElementById('stealth-pad').hidden = game !== 'stealth'
   helpEl.textContent = game === 'ttt'
     ? 'Tap a square on your turn. Three in a row wins.'
     : game === 'stealth'
-      ? 'Arrows or WASD to move and turn. Space or Fire to shoot. You only see 45° ahead.'
+      ? 'WASD to move. Aim with the mouse. Click to shoot. You only see 45° toward the cursor.'
       : 'Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.'
   banner.classList.toggle('under', game === 'ttt')
   mark.textContent = GAME_LABEL[game] || 'Games'
@@ -353,6 +368,74 @@ function broadcast() {
   channel.send({ type: 'broadcast', event: 'state', payload: match })
 }
 
+function localStealthInput() {
+  const fire = stealthFire
+  stealthFire = false
+  return {
+    w: stealthHeld.w,
+    a: stealthHeld.a,
+    s: stealthHeld.s,
+    d: stealthHeld.d,
+    aim: stealthAim,
+    fire,
+  }
+}
+
+function showStealth(state) {
+  match = state
+  const mine = state.players.find((player) => player.id === myId)
+  if (mine && !state.over) mine.a = stealthAim
+  drawStealth(stealthCtx, state, myId)
+  scoreEl.replaceChildren()
+  state.players.forEach((player) => {
+    const item = document.createElement('li')
+    if (!player.alive) item.className = 'dead'
+    const label = document.createElement('span')
+    label.textContent = player.name + (player.id === myId ? ' · you' : '') + (player.alive ? '' : ' · down')
+    item.append(label)
+    scoreEl.appendChild(item)
+  })
+  if (!state.over) {
+    banner.hidden = true
+    againButton.hidden = true
+    tag.textContent = 'WASD. Aim with the mouse. Click to shoot.'
+    return
+  }
+  const winner = state.players.find((player) => player.id === state.winner)
+  const text = !winner
+    ? 'Round over.'
+    : winner.id === myId
+      ? 'You win.'
+      : winner.name + ' wins.'
+  banner.hidden = false
+  banner.textContent = text
+  tag.textContent = text
+  againButton.hidden = !hosting
+}
+
+function stopStealthLoop() {
+  window.clearInterval(timer)
+  timer = 0
+}
+
+function stealthTick() {
+  if (!hosting || roomGame !== 'stealth' || !match || match.over) {
+    stopStealthLoop()
+    return
+  }
+  const now = performance.now()
+  const dt = Math.min(0.05, (now - stealthLast) / 1000 || 0.033)
+  stealthLast = now
+  stealthInputs[myId] = localStealthInput()
+  match = stepStealth(match, stealthInputs, dt)
+  Object.keys(stealthInputs).forEach((id) => {
+    if (stealthInputs[id]) stealthInputs[id].fire = false
+  })
+  showStealth(match)
+  broadcast()
+  if (match.over) stopStealthLoop()
+}
+
 function tick() {
   if (!hosting || !match || match.over || roomGame !== 'snake') return
   match = step(match, desired)
@@ -376,7 +459,9 @@ function applyMove(id, index) {
 function begin(players) {
   window.clearInterval(timer)
   timer = 0
+  stopStealthLoop()
   for (const key of Object.keys(desired)) delete desired[key]
+  for (const key of Object.keys(stealthInputs)) delete stealthInputs[key]
   publicGame = false
   advertised = ''
   if (lobbyChannel) lobbyChannel.untrack()
@@ -388,6 +473,16 @@ function begin(players) {
     match = createTtt(players)
     showTtt(match)
     broadcast()
+    return
+  }
+  if (roomGame === 'stealth') {
+    match = createStealthMatch(players)
+    showStealth(match)
+    broadcast()
+    if (hosting) {
+      stealthLast = performance.now()
+      timer = window.setInterval(stealthTick, 33)
+    }
     return
   }
   match = createMatch(players)
@@ -408,7 +503,8 @@ function openRoom(code, asHost, isPublic, game) {
   roomCode = code
   roomGame = gameOf(game)
   joinedAt = Date.now()
-  channel = realtime.channel((roomGame === 'ttt' ? 'ttt-' : 'snake-') + code, {
+  const prefix = roomGame === 'ttt' ? 'ttt-' : roomGame === 'stealth' ? 'stealth-' : 'snake-'
+  channel = realtime.channel(prefix + code, {
     config: { broadcast: { self: false }, presence: { key: myId } },
   })
   channel.on('presence', { event: 'sync' }, () => {
@@ -438,6 +534,15 @@ function openRoom(code, asHost, isPublic, game) {
         broadcast()
       }
     }
+    if (hosting && match && !match.over && roomGame === 'stealth') {
+      const other = match.players.find((player) => player.id !== key && player.alive)
+      if (other) {
+        match = { ...match, over: true, winner: other.id, players: match.players.map((player) => (player.id === key ? { ...player, alive: false } : player)) }
+        showStealth(match)
+        broadcast()
+        stopStealthLoop()
+      }
+    }
     if (!match) refreshLobby()
   })
   channel.on('broadcast', { event: 'start' }, ({ payload }) => {
@@ -456,6 +561,16 @@ function openRoom(code, asHost, isPublic, game) {
       showTtt(payload)
       return
     }
+    if (roomGame === 'stealth') {
+      if (!payload.players) return
+      if (lobby.hidden === false) {
+        lobby.hidden = true
+        play.hidden = false
+        showBoard('stealth')
+      }
+      showStealth(payload)
+      return
+    }
     if (!payload.snakes) return
     if (lobby.hidden === false) {
       lobby.hidden = true
@@ -471,6 +586,17 @@ function openRoom(code, asHost, isPublic, game) {
   channel.on('broadcast', { event: 'move' }, ({ payload }) => {
     if (!hosting || !payload) return
     applyMove(payload.id, payload.index)
+  })
+  channel.on('broadcast', { event: 'stealth' }, ({ payload }) => {
+    if (!hosting || roomGame !== 'stealth' || !payload || !payload.id) return
+    stealthInputs[payload.id] = {
+      w: Boolean(payload.w),
+      a: Boolean(payload.a),
+      s: Boolean(payload.s),
+      d: Boolean(payload.d),
+      aim: Number(payload.aim) || 0,
+      fire: Boolean(payload.fire) || (stealthInputs[payload.id] && stealthInputs[payload.id].fire),
+    }
   })
   channel.subscribe(async (status) => {
     if (status !== 'SUBSCRIBED') return
@@ -493,7 +619,7 @@ function renderGames() {
     const meta = metas[0] || {}
     if (!meta.open || !meta.code || id === myId) continue
     const game = gameOf(meta.game)
-    const max = game === 'ttt' ? 2 : 4
+    const max = game === 'snake' ? 4 : 2
     games.push({
       game,
       code: meta.code,
@@ -575,10 +701,6 @@ document.getElementById('pick').addEventListener('click', (event) => {
 document.getElementById('host').addEventListener('click', () => {
   saveName()
   showError('')
-  if (picked === 'stealth') {
-    startStealth()
-    return
-  }
   openRoom(alphabetCode(), true, true, picked)
 })
 
@@ -602,17 +724,15 @@ startButton.addEventListener('click', () => {
 })
 
 againButton.addEventListener('click', () => {
-  if (roomGame === 'stealth') {
-    againButton.hidden = true
-    banner.hidden = true
-    ensureStealth().start()
-    return
-  }
   if (!hosting || !match) return
   let people = []
   if (roomGame === 'ttt') {
     const sides = match.x.id === match.o.id ? [match.x] : [match.x, match.o]
     people = sides.filter((person) => roster().some((item) => item.id === person.id))
+  } else if (roomGame === 'stealth') {
+    people = match.players
+      .map((player) => ({ id: player.id, name: player.name }))
+      .filter((person) => roster().some((item) => item.id === person.id))
   } else {
     people = match.snakes
       .map((snake) => ({ id: snake.id, name: snake.name }))
@@ -637,69 +757,54 @@ const KEYS = {
   d: 'right',
 }
 
-const STEALTH_KEYS = {
-  arrowup: 'forward',
-  w: 'forward',
-  arrowdown: 'back',
-  s: 'back',
-  arrowleft: 'left',
-  a: 'left',
-  arrowright: 'right',
-  d: 'right',
-  ' ': 'shoot',
+function sendStealthInput(fireNow) {
+  if (roomGame !== 'stealth' || !match || match.over) return
+  const payload = {
+    id: myId,
+    w: stealthHeld.w,
+    a: stealthHeld.a,
+    s: stealthHeld.s,
+    d: stealthHeld.d,
+    aim: stealthAim,
+    fire: Boolean(fireNow),
+  }
+  if (hosting) {
+    stealthInputs[myId] = {
+      ...payload,
+      fire: Boolean(fireNow) || (stealthInputs[myId] && stealthInputs[myId].fire),
+    }
+    return
+  }
+  if (channel) channel.send({ type: 'broadcast', event: 'stealth', payload })
 }
 
-let stealthGame = null
-let stealthReport = ''
-
-function reportStealth(info) {
-  const key = (info.over || 'play') + ':' + info.left
-  if (key === stealthReport) return
-  stealthReport = key
-  scoreEl.replaceChildren()
-  const item = document.createElement('li')
-  const label = document.createElement('span')
-  label.textContent = info.over === 'win' ? 'Floor clear' : info.over === 'lose' ? 'Caught' : 'Guards left · ' + info.left
-  item.append(label)
-  scoreEl.appendChild(item)
-  tag.textContent = info.over === 'win'
-    ? 'You cleared the floor.'
-    : info.over === 'lose'
-      ? 'They saw you.'
-      : 'Look ahead. Walls block your view and your shots.'
-  banner.hidden = !info.over
-  banner.textContent = tag.textContent
-  againButton.hidden = !info.over
-}
-
-function ensureStealth() {
-  if (!stealthGame) stealthGame = createStealth(document.getElementById('stealth'), reportStealth)
-  return stealthGame
-}
-
-function startStealth() {
-  roomGame = 'stealth'
-  nameInput.disabled = true
-  lobby.hidden = true
-  play.hidden = false
-  showBoard('stealth')
-  stealthReport = ''
-  banner.hidden = true
-  againButton.hidden = true
-  ensureStealth().start()
+function aimFromEvent(event) {
+  const box = stealthCanvas.getBoundingClientRect()
+  const x = ((event.clientX - box.left) / box.width) * stealthCanvas.width
+  const y = ((event.clientY - box.top) / box.height) * stealthCanvas.height
+  const me = match && match.players && match.players.find((player) => player.id === myId)
+  if (!me) return
+  stealthAim = Math.atan2(y - me.y, x - me.x)
+  sendStealthInput(false)
 }
 
 window.addEventListener('keydown', (event) => {
-  if (roomGame === 'stealth') {
-    const act = STEALTH_KEYS[event.key.toLowerCase()]
-    if (!act) return
-    event.preventDefault()
-    if (act === 'shoot') {
-      if (!event.repeat) ensureStealth().shoot()
+  if (roomGame === 'stealth' && match && !match.over) {
+    const key = event.key.toLowerCase()
+    if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
+      event.preventDefault()
+      stealthHeld[key] = true
+      sendStealthInput(false)
       return
     }
-    ensureStealth().hold(act, true)
-    return
+    if (key === ' ') {
+      event.preventDefault()
+      if (!event.repeat) {
+        stealthFire = true
+        sendStealthInput(true)
+      }
+      return
+    }
   }
   const dir = KEYS[event.key.toLowerCase()]
   if (!dir || roomGame !== 'snake' || !match) return
@@ -709,31 +814,24 @@ window.addEventListener('keydown', (event) => {
 
 window.addEventListener('keyup', (event) => {
   if (roomGame !== 'stealth') return
-  const act = STEALTH_KEYS[event.key.toLowerCase()]
-  if (!act || act === 'shoot') return
-  ensureStealth().hold(act, false)
+  const key = event.key.toLowerCase()
+  if (key !== 'w' && key !== 'a' && key !== 's' && key !== 'd') return
+  stealthHeld[key] = false
+  sendStealthInput(false)
 })
 
-const stealthPad = document.getElementById('stealth-pad')
-stealthPad.addEventListener('pointerdown', (event) => {
-  const button = event.target.closest('button')
-  if (!button || !button.dataset.act) return
+stealthCanvas.addEventListener('pointermove', (event) => {
+  if (roomGame !== 'stealth' || !match || match.over) return
+  aimFromEvent(event)
+})
+
+stealthCanvas.addEventListener('pointerdown', (event) => {
+  if (roomGame !== 'stealth' || !match || match.over) return
   event.preventDefault()
-  try { button.setPointerCapture(event.pointerId) } catch (err) { /* a tap still counts */ }
-  if (button.dataset.act === 'shoot') ensureStealth().shoot()
-  else {
-    ensureStealth().hold(button.dataset.act, true)
-    ensureStealth().poke(button.dataset.act)
-  }
+  aimFromEvent(event)
+  stealthFire = true
+  sendStealthInput(true)
 })
-stealthPad.addEventListener('pointerup', releaseStealth)
-stealthPad.addEventListener('pointercancel', releaseStealth)
-
-function releaseStealth(event) {
-  const button = event.target.closest('button')
-  if (!button || !button.dataset.act || button.dataset.act === 'shoot') return
-  ensureStealth().hold(button.dataset.act, false)
-}
 
 pad.addEventListener('click', (event) => {
   const dir = event.target.dataset && event.target.dataset.dir
