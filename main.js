@@ -5,9 +5,10 @@ import {
   createChainMatch,
   stepChain,
   drawChain,
+  loadChainAssets,
   botInput as chainBotInput,
   BOT_ID as CHAIN_BOT_ID,
-} from './chain.js?v=3'
+} from './chain.js?v=4'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
@@ -133,7 +134,7 @@ function selectGame(game) {
       : picked === 'stealth'
         ? 'Stealth best of 3. Knife vs gun. Fight a bot or host a 1v1.'
         : picked === 'chain'
-          ? 'Chain Up. Two climbers linked by a chain. Host or join.'
+          ? 'Chain Up. Linked climbers, side-scroll left. Host or join.'
           : 'Snake. Host a public game or join one.'
   }
 }
@@ -320,7 +321,7 @@ function showBoard(game) {
     : game === 'stealth'
       ? 'Best of 3. Knife: 90°, 2 HP, faster. Gun: 45°. WASD + mouse.'
       : game === 'chain'
-        ? 'A/D or arrows to move. Space / W / ↑ to jump. Stay within the chain.'
+        ? 'Climb left together. A/D or arrows move, Space / W / ↑ jump. Stay linked.'
         : 'Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.'
   banner.classList.toggle('under', game === 'ttt')
   mark.textContent = GAME_LABEL[game] || 'Games'
@@ -602,16 +603,22 @@ function showChain(state) {
     swatch.className = 'swatch'
     swatch.style.setProperty('--c', player.color)
     const label = document.createElement('span')
-    const height = Math.max(0, Math.round(680 - (player.y + player.h)))
+    const left = Math.max(0, Math.round(480 - player.x))
+    const up = Math.max(0, Math.round(680 - (player.y + player.h)))
     label.textContent =
-      player.name + (player.id === myId ? ' · you' : '') + ' · ' + height + 'm'
+      player.name +
+      (player.id === myId ? ' · you' : '') +
+      ' · L' +
+      left +
+      ' · U' +
+      up
     item.append(swatch, label)
     scoreEl.appendChild(item)
   })
   banner.hidden = true
   againButton.hidden = true
   againButton.disabled = false
-  tag.textContent = 'Climb together. Don’t snap the chain.'
+  tag.textContent = 'Keep going left. Short hops. Don’t snap the chain.'
 }
 
 function chainTick() {
@@ -702,6 +709,9 @@ function begin(players) {
     match = createChainMatch(ordered)
     showChain(match)
     broadcast()
+    loadChainAssets().then(() => {
+      if (match && match.kind === 'chain') showChain(match)
+    })
     if (hosting) {
       chainLast = performance.now()
       timer = window.setInterval(chainTick, 33)

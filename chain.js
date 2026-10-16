@@ -3,32 +3,68 @@ export const HEIGHT = 720
 export const BOT_ID = 'chain-bot'
 export const CHAIN_LEN = 100
 export const SIZE = 28
+export const WORLD_MIN_X = -2200
+export const WORLD_MAX_X = 720
+export const FLOOR_Y = 680
 
-const GRAVITY = 2100
-const JUMP = -640
+const GRAVITY = 2300
+const JUMP = -480
 const MOVE = 250
 const MAX_FALL = 980
 const CHAIN_PULL = 0.55
 
+const SPRITES = {}
+
+/** Walkable hitbox is a thin top slab; sprite hangs below it. */
 export const PLATFORMS = [
-  { x: 0, y: 680, w: 640, h: 40 },
-  { x: 40, y: 580, w: 160, h: 16 },
-  { x: 280, y: 520, w: 140, h: 16 },
-  { x: 460, y: 450, w: 150, h: 16 },
-  { x: 120, y: 390, w: 150, h: 16 },
-  { x: 340, y: 320, w: 160, h: 16 },
-  { x: 40, y: 250, w: 150, h: 16 },
-  { x: 260, y: 180, w: 160, h: 16 },
-  { x: 450, y: 110, w: 150, h: 16 },
-  { x: 180, y: 50, w: 180, h: 16 },
+  // starting ground (right side) — progress goes left / up in short hops
+  { x: 120, y: FLOOR_Y, w: 520, h: 22, kind: 'ground', imgH: 110, floor: true },
+  { x: -40, y: FLOOR_Y, w: 200, h: 22, kind: 'ground', imgH: 110, floor: true },
+  { x: -260, y: 630, w: 200, h: 18, kind: 'stone', imgH: 72 },
+  { x: -480, y: 580, w: 180, h: 18, kind: 'wood', imgH: 58 },
+  { x: -700, y: 530, w: 190, h: 18, kind: 'rock', imgH: 68 },
+  { x: -920, y: 480, w: 170, h: 18, kind: 'stone', imgH: 72 },
+  { x: -1140, y: 430, w: 200, h: 18, kind: 'wood', imgH: 58 },
+  { x: -1360, y: 380, w: 180, h: 18, kind: 'rock', imgH: 68 },
+  { x: -1580, y: 330, w: 200, h: 18, kind: 'stone', imgH: 72 },
+  { x: -1800, y: 280, w: 220, h: 18, kind: 'wood', imgH: 58 },
+  { x: -2020, y: 230, w: 200, h: 18, kind: 'rock', imgH: 68 },
+  { x: WORLD_MIN_X, y: FLOOR_Y + 80, w: WORLD_MAX_X - WORLD_MIN_X, h: 40, kind: 'ground', imgH: 80, floor: true, hidden: true },
 ]
 
 const STARTS = [
-  { x: 200, y: 680 - SIZE },
-  { x: 280, y: 680 - SIZE },
+  { x: 420, y: FLOOR_Y - SIZE },
+  { x: 480, y: FLOOR_Y - SIZE },
 ]
 
 const COLORS = ['#3b82f6', '#e23d3d']
+
+export function loadChainAssets() {
+  const files = {
+    ground: 'assets/chain/ground.png',
+    stone: 'assets/chain/ledge-stone.png',
+    rock: 'assets/chain/ledge-rock.png',
+    wood: 'assets/chain/ledge-wood.png',
+  }
+  return Promise.all(
+    Object.entries(files).map(
+      ([key, src]) =>
+        new Promise((resolve) => {
+          if (typeof Image === 'undefined') {
+            resolve()
+            return
+          }
+          const img = new Image()
+          img.onload = () => {
+            SPRITES[key] = img
+            resolve()
+          }
+          img.onerror = () => resolve()
+          img.src = src
+        }),
+    ),
+  )
+}
 
 function overlaps(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
@@ -39,13 +75,14 @@ function overX(a, plat) {
 }
 
 function clampWorldX(body) {
-  if (body.x < 0) body.x = 0
-  if (body.x + body.w > WIDTH) body.x = WIDTH - body.w
+  if (body.x < WORLD_MIN_X) body.x = WORLD_MIN_X
+  if (body.x + body.w > WORLD_MAX_X) body.x = WORLD_MAX_X - body.w
 }
 
 function collideX(body) {
   clampWorldX(body)
   for (const plat of PLATFORMS) {
+    if (plat.hidden) continue
     if (!overlaps(body, plat)) continue
     const overlapL = body.x + body.w - plat.x
     const overlapR = plat.x + plat.w - body.x
@@ -62,7 +99,6 @@ function collideY(body, prevY) {
     if (!overX(body, plat)) continue
     const feet = body.y + body.h
     const prevFeet = prevY + body.h
-    // Sweep: catch landings even when falling fast through a thin ledge
     if (body.vy >= 0 && prevFeet <= plat.y + 1 && feet >= plat.y) {
       body.y = plat.y - body.h
       body.vy = 0
@@ -90,19 +126,13 @@ function ejectSolids(body) {
       const penRight = plat.x + plat.w - body.x
       const bodyMid = body.y + body.h * 0.5
       const platMid = plat.y + plat.h * 0.5
-      const isFloor = plat === PLATFORMS[0]
-      // Never shove someone deeper into the world floor — always exit upward.
-      const preferUp =
-        isFloor ||
-        body.vy >= 0 ||
-        bodyMid <= platMid ||
-        penUp <= penDown
+      const preferUp = plat.floor || body.vy >= 0 || bodyMid <= platMid || penUp <= penDown
       const minHoriz = Math.min(penLeft, penRight)
       if (preferUp && penUp <= minHoriz + 0.5) {
         body.y = plat.y - body.h
         if (body.vy > 0) body.vy = 0
         body.grounded = true
-      } else if (!preferUp && !isFloor && penDown <= minHoriz + 0.5) {
+      } else if (!preferUp && !plat.floor && penDown <= minHoriz + 0.5) {
         body.y = plat.y + plat.h
         if (body.vy < 0) body.vy = 0
       } else if (penLeft < penRight) {
@@ -116,9 +146,8 @@ function ejectSolids(body) {
     if (!hit) break
   }
   clampWorldX(body)
-  const floor = PLATFORMS[0]
-  if (body.y + body.h > floor.y) {
-    body.y = floor.y - body.h
+  if (body.y + body.h > FLOOR_Y + 90) {
+    body.y = FLOOR_Y + 90 - body.h
     if (body.vy > 0) body.vy = 0
     body.grounded = true
   }
@@ -140,13 +169,8 @@ function separatePlayers(a, b) {
     a.vx *= 0.5
     b.vx *= 0.5
   } else if (a.y < b.y) {
-    // Keep the lower cube planted; lift the upper one instead of burying anyone.
     a.y -= overlapY + 0.01
-    if (b.grounded) {
-      /* leave b */
-    } else {
-      b.y += overlapY * 0.25
-    }
+    if (!b.grounded) b.y += overlapY * 0.25
     if (a.vy > 0) a.vy = 0
   } else {
     b.y -= overlapY + 0.01
@@ -193,6 +217,7 @@ export function createChainMatch(players) {
   return {
     kind: 'chain',
     over: false,
+    camX: 200,
     camY: 200,
     time: 0,
     players: seats.map((person, index) => {
@@ -207,7 +232,7 @@ export function createChainMatch(players) {
         h: SIZE,
         vx: 0,
         vy: 0,
-        facing: index === 0 ? 1 : -1,
+        facing: -1,
         grounded: true,
         walk: 0,
       }
@@ -220,7 +245,6 @@ export function botInput(state, botId) {
   const bot = state.players.find((player) => player.id === botId)
   const pal = state.players.find((player) => player.id !== botId)
   if (!bot || !pal) return empty
-  const mid = (bot.x + bot.w / 2 + pal.x + pal.w / 2) / 2
   const gap = pal.x + pal.w / 2 - (bot.x + bot.w / 2)
   const dist = Math.hypot(gap, pal.y - bot.y)
   let left = false
@@ -229,19 +253,13 @@ export function botInput(state, botId) {
   if (dist > CHAIN_LEN * 0.72) {
     if (gap > 8) right = true
     else if (gap < -8) left = true
-  } else if (bot.y > pal.y + 20) {
-    if (bot.x + bot.w / 2 < mid - 10) right = true
-    else if (bot.x + bot.w / 2 > mid + 10) left = true
-    else right = Math.sin(state.time * 2) > 0
-    jump = bot.grounded
   } else {
-    if (Math.abs(gap) > 40) {
-      if (gap > 0) right = true
-      else left = true
-    } else if (bot.grounded && Math.random() < 0.02) jump = true
+    // Prefer climbing left with the route
+    left = true
+    if (bot.y > pal.y + 24) jump = bot.grounded
+    else if (bot.grounded && Math.random() < 0.03) jump = true
   }
-  if (bot.grounded && bot.x < 30) right = true
-  if (bot.grounded && bot.x + bot.w > WIDTH - 30) left = true
+  if (bot.grounded && bot.x + bot.w > WORLD_MAX_X - 40) left = true
   return { left, right, jump }
 }
 
@@ -283,15 +301,23 @@ export function stepChain(state, inputs, dt) {
     enforceChain(next.players[0], next.players[1])
     next.players.forEach((player) => ejectSolids(player))
   }
+  const midX =
+    next.players.reduce((sum, player) => sum + player.x + player.w / 2, 0) /
+    Math.max(1, next.players.length)
   const midY =
     next.players.reduce((sum, player) => sum + player.y + player.h / 2, 0) /
     Math.max(1, next.players.length)
-  const target = midY - HEIGHT * 0.55
-  next.camY += (target - next.camY) * Math.min(1, dt * 6)
+  // Bias camera so the path ahead (left) stays on screen
+  const targetX = midX - WIDTH * 0.62
+  const targetY = midY - HEIGHT * 0.55
+  next.camX = typeof next.camX === 'number' ? next.camX : targetX
+  next.camY = typeof next.camY === 'number' ? next.camY : targetY
+  next.camX += (targetX - next.camX) * Math.min(1, dt * 5)
+  next.camY += (targetY - next.camY) * Math.min(1, dt * 5)
   return next
 }
 
-function drawCube(ctx, player, time) {
+function drawCube(ctx, player) {
   const { x, y, w, h, color, facing, walk, grounded, vx } = player
   ctx.fillStyle = color
   ctx.fillRect(x, y, w, h)
@@ -316,7 +342,6 @@ function drawCube(ctx, player, time) {
   ctx.fillStyle = 'rgba(15,23,42,0.35)'
   ctx.fillRect(x + 5, legY + legH - 2, 6, 2)
   ctx.fillRect(x + w - 11, legY + legH - 2, 6, 2)
-  void time
 }
 
 function drawChainLinks(ctx, a, b) {
@@ -324,45 +349,48 @@ function drawChainLinks(ctx, a, b) {
   const ay = a.y + a.h / 2
   const bx = b.x + b.w / 2
   const by = b.y + b.h / 2
-  const links = 10
   ctx.strokeStyle = '#c4b59a'
   ctx.lineWidth = 3
   ctx.lineCap = 'round'
   ctx.beginPath()
   ctx.moveTo(ax, ay)
-  for (let i = 1; i < links; i += 1) {
-    const t = i / links
-    const sway = Math.sin(t * Math.PI) * 4
-    const px = ax + (bx - ax) * t
-    const py = ay + (by - ay) * t + sway
-    ctx.lineTo(px, py)
+  for (let i = 1; i < 10; i += 1) {
+    const t = i / 10
+    ctx.lineTo(ax + (bx - ax) * t, ay + (by - ay) * t + Math.sin(t * Math.PI) * 4)
   }
   ctx.lineTo(bx, by)
   ctx.stroke()
-  ctx.strokeStyle = '#8a7a62'
-  ctx.lineWidth = 1.5
-  ctx.stroke()
+}
+
+function drawPlatform(ctx, plat) {
+  if (plat.hidden) return
+  const img = SPRITES[plat.kind]
+  const drawH = plat.imgH || 64
+  if (img) {
+    ctx.drawImage(img, plat.x, plat.y, plat.w, drawH)
+  } else {
+    ctx.fillStyle = plat.kind === 'wood' ? '#8b5a2b' : plat.kind === 'stone' ? '#6b7280' : '#57534e'
+    ctx.fillRect(plat.x, plat.y, plat.w, drawH)
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'
+    ctx.fillRect(plat.x, plat.y, plat.w, 6)
+  }
 }
 
 export function drawChain(ctx, state) {
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
-  const cam = state.camY || 0
+  const camX = state.camX || 0
+  const camY = state.camY || 0
   ctx.save()
-  ctx.translate(0, -cam)
-  const top = cam - 40
-  const bottom = cam + HEIGHT + 40
-  const sky = ctx.createLinearGradient(0, top, 0, bottom)
-  sky.addColorStop(0, '#87b7e8')
-  sky.addColorStop(1, '#d7e8f6')
+  ctx.translate(-camX, -camY)
+  const left = camX - 40
+  const top = camY - 40
+  const sky = ctx.createLinearGradient(0, top, 0, top + HEIGHT + 80)
+  sky.addColorStop(0, '#7eb6e8')
+  sky.addColorStop(1, '#d9ebf7')
   ctx.fillStyle = sky
-  ctx.fillRect(0, top, WIDTH, HEIGHT + 80)
-  PLATFORMS.forEach((plat) => {
-    ctx.fillStyle = '#3d4a3a'
-    ctx.fillRect(plat.x, plat.y, plat.w, plat.h)
-    ctx.fillStyle = '#6f8a5c'
-    ctx.fillRect(plat.x, plat.y, plat.w, 5)
-  })
+  ctx.fillRect(left, top, WIDTH + 80, HEIGHT + 80)
+  PLATFORMS.forEach((plat) => drawPlatform(ctx, plat))
   if (state.players.length >= 2) drawChainLinks(ctx, state.players[0], state.players[1])
-  state.players.forEach((player) => drawCube(ctx, player, state.time || 0))
+  state.players.forEach((player) => drawCube(ctx, player))
   ctx.restore()
 }

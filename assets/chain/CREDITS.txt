@@ -1,0 +1,5 @@
+Platform photos (Unsplash License — free to use):
+- cliff / ground crop: https://unsplash.com/photos/mountain-range (photo-1464822759023-fed622ff2c3b)
+- rock ledge crop: https://unsplash.com/photos (photo-1518709268805-4e9042af9f23)
+- wood ledge crop: https://unsplash.com/photos (photo-1558618666-fcd25c85cd64)
+Crops and hitboxes prepared for Chain Up.
