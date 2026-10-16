@@ -84,7 +84,8 @@ function alphabetCode() {
 }
 
 function gameOf(value) {
-  return value === 'ttt' ? 'ttt' : 'snake'
+  if (value === 'ttt' || value === 'stealth') return value
+  return 'snake'
 }
 
 function maxPlayers() {
@@ -94,15 +95,25 @@ function maxPlayers() {
 function selectGame(game) {
   picked = gameOf(game)
   localStorage.setItem('game-pick', picked)
-  document.getElementById('pick-snake').classList.toggle('on', picked === 'snake')
-  document.getElementById('pick-ttt').classList.toggle('on', picked === 'ttt')
-  document.getElementById('pick-snake').setAttribute('aria-pressed', String(picked === 'snake'))
-  document.getElementById('pick-ttt').setAttribute('aria-pressed', String(picked === 'ttt'))
+  ;['snake', 'ttt', 'stealth'].forEach((id) => {
+    const card = document.getElementById('pick-' + id)
+    const on = picked === id
+    card.classList.toggle('on', on)
+    card.setAttribute('aria-pressed', String(on))
+  })
+  document.getElementById('host').textContent = picked === 'stealth' ? 'Play' : 'Host public'
+  roomInput.disabled = picked === 'stealth'
+  document.getElementById('join').disabled = picked === 'stealth'
+  document.getElementById('blurb').textContent = picked === 'stealth'
+    ? 'Stealth is played on this screen. Pick Snake or Tic Tac Toe to host or join.'
+    : 'Pick a game to host. Join a row below, or enter a code for the game you picked.'
   if (!channel) {
     mark.textContent = GAME_LABEL[picked]
     tag.textContent = picked === 'ttt'
       ? 'Tic Tac Toe. Host a public game or join one.'
-      : 'Snake. Host a public game or join one.'
+      : picked === 'stealth'
+        ? 'Stealth. You only see 45° ahead. Walls block sight and bullets.'
+        : 'Snake. Host a public game or join one.'
   }
 }
 
@@ -259,14 +270,17 @@ function outcomeText(state) {
 }
 
 function showBoard(game) {
-  const ttt = game === 'ttt'
-  document.getElementById('snake-stage').hidden = ttt
-  document.getElementById('ttt-stage').hidden = !ttt
-  pad.hidden = ttt
-  helpEl.textContent = ttt
+  document.getElementById('snake-stage').hidden = game !== 'snake'
+  document.getElementById('ttt-stage').hidden = game !== 'ttt'
+  document.getElementById('stealth-stage').hidden = game !== 'stealth'
+  pad.hidden = game !== 'snake'
+  document.getElementById('stealth-pad').hidden = game !== 'stealth'
+  helpEl.textContent = game === 'ttt'
     ? 'Tap a square on your turn. Three in a row wins.'
-    : 'Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.'
-  banner.classList.toggle('under', ttt)
+    : game === 'stealth'
+      ? 'Arrows or WASD to move and turn. Space or Fire to shoot. You only see 45° ahead.'
+      : 'Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.'
+  banner.classList.toggle('under', game === 'ttt')
   mark.textContent = GAME_LABEL[game] || 'Games'
 }
 
