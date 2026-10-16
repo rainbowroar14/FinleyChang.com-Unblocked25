@@ -28,12 +28,34 @@ localStorage.setItem('snake-id', myId)
 nameInput.value = localStorage.getItem('snake-name') || ''
 
 let channel = null
+let lobbyChannel = null
+let client = null
+let lobbyClient = null
+let advertised = ''
 let hosting = false
+let publicGame = false
 let hostId = ''
 let roomCode = ''
+let joinedAt = 0
 let match = null
 let timer = 0
 const desired = {}
+const gamesEl = document.getElementById('games')
+const gamesEmpty = document.getElementById('games-empty')
+
+function gameClient() {
+  const lib = window.supabase
+  if (!lib || !lib.createClient) return null
+  if (!client) client = lib.createClient(URL, KEY)
+  return client
+}
+
+function lobbyRealtime() {
+  const lib = window.supabase
+  if (!lib || !lib.createClient) return null
+  if (!lobbyClient) lobbyClient = lib.createClient(URL, KEY)
+  return lobbyClient
+}
 
 function myName() {
   const name = nameInput.value.trim().slice(0, 16)
@@ -99,9 +121,10 @@ function refreshLobby() {
   startButton.textContent = count <= 1 ? 'Start solo' : 'Start ' + count + ' players'
   if (hosting) {
     waitEl.textContent = count <= 1
-      ? 'Room ' + roomCode + '. Start solo, or share the code.'
+      ? 'Room ' + roomCode + '. Start solo, or wait for someone from the list.'
       : 'Room ' + roomCode + '. Apples on the board: ' + count + '.'
   } else waitEl.textContent = 'Waiting for the host to start.'
+  if (publicGame && !match) advertise()
 }
 
 function drawEye(x, y, ox, oy, rotten) {
@@ -217,6 +240,10 @@ function tick() {
 function begin(players) {
   match = createMatch(players)
   for (const key of Object.keys(desired)) delete desired[key]
+  publicGame = false
+  advertised = ''
+  if (lobbyChannel) lobbyChannel.untrack()
+  nameInput.disabled = true
   lobby.hidden = true
   play.hidden = false
   showMatch(match)
@@ -227,17 +254,18 @@ function begin(players) {
   }
 }
 
-function openRoom(code, asHost) {
-  const lib = window.supabase
-  if (!lib || !lib.createClient) {
+function openRoom(code, asHost, isPublic) {
+  const realtime = gameClient()
+  if (!realtime) {
     showError('The game server did not load.')
     return
   }
   if (channel) channel.unsubscribe()
   hosting = asHost
+  publicGame = Boolean(isPublic)
   roomCode = code
-  const client = lib.createClient(URL, KEY)
-  channel = client.channel('snake-' + code, {
+  joinedAt = Date.now()
+  channel = realtime.channel('snake-' + code, {
     config: { broadcast: { self: false }, presence: { key: myId } },
   })
   channel.on('presence', { event: 'sync' }, () => {
@@ -279,14 +307,82 @@ function openRoom(code, asHost) {
   })
   channel.subscribe(async (status) => {
     if (status !== 'SUBSCRIBED') return
-    await channel.track({ name: myName(), host: hosting, at: Date.now() })
+    await channel.track({ name: myName(), host: hosting, at: joinedAt })
     document.getElementById('setup').hidden = true
     waiting.hidden = false
     codeEl.hidden = false
     codeEl.textContent = code
     tag.textContent = hosting ? 'You are the host. Leave this tab open.' : 'In room ' + code
     refreshLobby()
+    if (publicGame) advertise()
   })
+}
+
+function renderGames() {
+  if (!lobbyChannel || !gamesEl) return
+  const games = []
+  for (const [id, metas] of Object.entries(lobbyChannel.presenceState())) {
+    const meta = metas[0] || {}
+    if (!meta.open || !meta.code || id === myId) continue
+    games.push({
+      code: meta.code,
+      name: meta.name || 'Player',
+      count: Math.max(1, Math.min(4, Number(meta.count) || 1)),
+    })
+  }
+  games.sort((a, b) => a.code.localeCompare(b.code))
+  gamesEl.replaceChildren()
+  gamesEmpty.hidden = games.length > 0
+  games.forEach((game) => {
+    const item = document.createElement('li')
+    const label = document.createElement('span')
+    label.textContent = game.name + ' · ' + game.code + ' · ' + game.count + '/4'
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = game.count >= 4 ? 'Full' : 'Join'
+    button.disabled = game.count >= 4
+    button.addEventListener('click', () => {
+      saveName()
+      showError('')
+      openRoom(game.code, false, false)
+    })
+    item.append(label, button)
+    gamesEl.appendChild(item)
+  })
+}
+
+function advertise() {
+  if (!publicGame || match || !roomCode) return
+  const count = Math.max(1, Math.min(4, roster().length || 1))
+  const payload = { open: true, code: roomCode, name: myName(), count }
+  const next = JSON.stringify(payload)
+  if (!lobbyChannel || lobbyChannel.state === 'closed' || lobbyChannel.state === 'errored') {
+    advertised = ''
+    connectLobby()
+    return
+  }
+  if (lobbyChannel.state !== 'joined') return
+  if (next === advertised) return
+  advertised = next
+  lobbyChannel.track(payload)
+}
+
+function connectLobby() {
+  const realtime = lobbyRealtime()
+  if (!realtime) return
+  if (lobbyChannel && (lobbyChannel.state === 'joined' || lobbyChannel.state === 'joining')) return
+  if (lobbyChannel) realtime.removeChannel(lobbyChannel)
+  lobbyChannel = realtime.channel('snake-lobby', {
+    config: { presence: { key: myId } },
+  })
+  lobbyChannel.on('presence', { event: 'sync' }, renderGames)
+  lobbyChannel.subscribe((status) => {
+    if (status === 'SUBSCRIBED' && publicGame) advertise()
+  })
+}
+
+function saveName() {
+  localStorage.setItem('snake-name', myName())
 }
 
 function steer(dir) {
@@ -298,9 +394,9 @@ function steer(dir) {
 }
 
 document.getElementById('host').addEventListener('click', () => {
-  localStorage.setItem('snake-name', myName())
+  saveName()
   showError('')
-  openRoom(alphabetCode(), true)
+  openRoom(alphabetCode(), true, true)
 })
 
 document.getElementById('join').addEventListener('click', () => {
@@ -309,9 +405,9 @@ document.getElementById('join').addEventListener('click', () => {
     showError('Enter the 4 letter code.')
     return
   }
-  localStorage.setItem('snake-name', myName())
+  saveName()
   showError('')
-  openRoom(code, false)
+  openRoom(code, false, false)
 })
 
 startButton.addEventListener('click', () => {
@@ -359,4 +455,9 @@ document.getElementById('pad').addEventListener('click', (event) => {
 
 nameInput.addEventListener('input', () => {
   if (nameInput.value.length > 16) nameInput.value = nameInput.value.slice(0, 16)
+  saveName()
+  if (channel && !match) channel.track({ name: myName(), host: hosting, at: joinedAt })
+  if (publicGame) advertise()
 })
+
+connectLobby()
