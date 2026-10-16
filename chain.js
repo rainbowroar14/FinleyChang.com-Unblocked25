@@ -34,32 +34,79 @@ function overlaps(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 }
 
-function resolvePlatforms(body, prevY) {
+function overX(a, plat) {
+  return a.x < plat.x + plat.w && a.x + a.w > plat.x
+}
+
+function clampWorldX(body) {
+  if (body.x < 0) body.x = 0
+  if (body.x + body.w > WIDTH) body.x = WIDTH - body.w
+}
+
+function collideX(body) {
+  clampWorldX(body)
+  for (const plat of PLATFORMS) {
+    if (!overlaps(body, plat)) continue
+    const overlapL = body.x + body.w - plat.x
+    const overlapR = plat.x + plat.w - body.x
+    if (overlapL < overlapR) body.x = plat.x - body.w
+    else body.x = plat.x + plat.w
+    body.vx = 0
+  }
+  clampWorldX(body)
+}
+
+function collideY(body, prevY) {
   body.grounded = false
   for (const plat of PLATFORMS) {
-    const overX = body.x < plat.x + plat.w && body.x + body.w > plat.x
-    if (!overX) continue
+    if (!overX(body, plat)) continue
     const feet = body.y + body.h
-    const wasAbove = prevY + body.h <= plat.y + 2
-    if (body.vy >= 0 && wasAbove && feet >= plat.y - 1 && feet <= plat.y + 12) {
+    const prevFeet = prevY + body.h
+    if (body.vy >= 0 && prevFeet <= plat.y + 1 && feet >= plat.y) {
       body.y = plat.y - body.h
       body.vy = 0
       body.grounded = true
       continue
     }
-    if (!overlaps(body, plat)) continue
-    if (body.vy < 0 && prevY >= plat.y + plat.h - 2) {
+    if (body.vy < 0 && prevY >= plat.y + plat.h - 1 && body.y < plat.y + plat.h) {
       body.y = plat.y + plat.h
       body.vy = 0
       continue
     }
-    const overlapL = body.x + body.w - plat.x
-    const overlapR = plat.x + plat.w - body.x
-    if (overlapL < overlapR) body.x = plat.x - body.w
-    else body.x = plat.x + plat.w
   }
-  if (body.x < 0) body.x = 0
-  if (body.x + body.w > WIDTH) body.x = WIDTH - body.w
+  ejectSolids(body)
+}
+
+function ejectSolids(body) {
+  for (const plat of PLATFORMS) {
+    if (!overlaps(body, plat)) continue
+    const penUp = body.y + body.h - plat.y
+    const penDown = plat.y + plat.h - body.y
+    const penLeft = body.x + body.w - plat.x
+    const penRight = plat.x + plat.w - body.x
+    const smallest = Math.min(penUp, penDown, penLeft, penRight)
+    if (smallest === penUp || (penUp <= 18 && penUp <= penDown)) {
+      body.y = plat.y - body.h
+      if (body.vy > 0) body.vy = 0
+      body.grounded = true
+    } else if (smallest === penDown) {
+      body.y = plat.y + plat.h
+      if (body.vy < 0) body.vy = 0
+    } else if (smallest === penLeft) {
+      body.x = plat.x - body.w
+      body.vx = 0
+    } else {
+      body.x = plat.x + plat.w
+      body.vx = 0
+    }
+  }
+  clampWorldX(body)
+  const floor = PLATFORMS[0]
+  if (body.y + body.h > floor.y) {
+    body.y = floor.y - body.h
+    if (body.vy > 0) body.vy = 0
+    body.grounded = true
+  }
 }
 
 function separatePlayers(a, b) {
@@ -67,7 +114,7 @@ function separatePlayers(a, b) {
   const overlapX = Math.min(a.x + a.w - b.x, b.x + b.w - a.x)
   const overlapY = Math.min(a.y + a.h - b.y, b.y + b.h - a.y)
   if (overlapX < overlapY) {
-    const push = overlapX / 2
+    const push = overlapX / 2 + 0.01
     if (a.x < b.x) {
       a.x -= push
       b.x += push
@@ -75,24 +122,24 @@ function separatePlayers(a, b) {
       a.x += push
       b.x -= push
     }
+    a.vx = 0
+    b.vx = 0
   } else {
-    const push = overlapY / 2
+    const push = overlapY / 2 + 0.01
     if (a.y < b.y) {
       a.y -= push
       b.y += push
-      if (b.vy > 0) {
-        b.vy = 0
-        b.grounded = true
-      }
+      if (b.vy > 0) b.vy = 0
+      b.grounded = true
     } else {
       a.y += push
       b.y -= push
-      if (a.vy > 0) {
-        a.vy = 0
-        a.grounded = true
-      }
+      if (a.vy > 0) a.vy = 0
+      a.grounded = true
     }
   }
+  ejectSolids(a)
+  ejectSolids(b)
 }
 
 function enforceChain(a, b) {
@@ -104,7 +151,7 @@ function enforceChain(a, b) {
   const dy = by - ay
   const dist = Math.hypot(dx, dy) || 0.0001
   if (dist <= CHAIN_LEN) return
-  const excess = dist - CHAIN_LEN
+  const excess = Math.min(dist - CHAIN_LEN, 28)
   const nx = dx / dist
   const ny = dy / dist
   const pull = excess * CHAIN_PULL * 0.5
@@ -122,6 +169,8 @@ function enforceChain(a, b) {
     b.vx -= nx * alongB * 0.35
     b.vy -= ny * alongB * 0.35
   }
+  ejectSolids(a)
+  ejectSolids(b)
 }
 
 export function createChainMatch(players) {
@@ -206,20 +255,18 @@ export function stepChain(state, inputs, dt) {
       player.grounded = false
     }
     player.vy = Math.min(MAX_FALL, player.vy + GRAVITY * dt)
-    const prevY = player.y
     player.x += player.vx * dt
+    collideX(player)
+    const prevY = player.y
     player.y += player.vy * dt
-    resolvePlatforms(player, prevY)
+    collideY(player, prevY)
   })
   if (next.players.length >= 2) {
     separatePlayers(next.players[0], next.players[1])
     enforceChain(next.players[0], next.players[1])
-    next.players.forEach((player) => {
-      const prevY = player.y
-      resolvePlatforms(player, prevY)
-    })
     separatePlayers(next.players[0], next.players[1])
     enforceChain(next.players[0], next.players[1])
+    next.players.forEach((player) => ejectSolids(player))
   }
   const midY =
     next.players.reduce((sum, player) => sum + player.y + player.h / 2, 0) /

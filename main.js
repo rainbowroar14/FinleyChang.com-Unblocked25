@@ -7,7 +7,7 @@ import {
   drawChain,
   botInput as chainBotInput,
   BOT_ID as CHAIN_BOT_ID,
-} from './chain.js?v=1'
+} from './chain.js?v=2'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
