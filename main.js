@@ -95,11 +95,11 @@ function refreshLobby() {
   paintRoster(people.slice(0, 4).concat(people.slice(4)), playersEl, false)
   const count = Math.min(4, people.length)
   startButton.hidden = !hosting
-  startButton.disabled = count < 2
-  startButton.textContent = count < 2 ? 'Need 2 players' : 'Start ' + count + ' players'
+  startButton.disabled = count < 1
+  startButton.textContent = count <= 1 ? 'Start solo' : 'Start ' + count + ' players'
   if (hosting) {
-    waitEl.textContent = count < 2
-      ? 'Room ' + roomCode + '. Share the code, then press Start.'
+    waitEl.textContent = count <= 1
+      ? 'Room ' + roomCode + '. Start solo, or share the code.'
       : 'Room ' + roomCode + '. Apples on the board: ' + count + '.'
   } else waitEl.textContent = 'Waiting for the host to start.'
 }
@@ -173,6 +173,7 @@ function outcomeText(state) {
   const winner = state.snakes.find((snake) => snake.id === state.winner)
   if (!winner) return 'Tie on fruits.'
   const fruits = winner.fruits || 0
+  if (state.snakes.length === 1) return fruits + (fruits === 1 ? ' fruit.' : ' fruits.')
   if (winner.id === myId) return 'You win. ' + fruits + ' fruits.'
   return winner.name + ' wins. ' + fruits + ' fruits.'
 }
@@ -193,6 +194,7 @@ function showMatch(state) {
   if (mine && !mine.alive && !state.over) tag.textContent = 'You are out. They only win once they have more fruits.'
   else if (state.over) tag.textContent = outcomeText(state)
   else if (state.snakes.some((snake) => !snake.alive)) tag.textContent = 'Still going. Most fruits wins.'
+  else if (state.snakes.length === 1) tag.textContent = 'Solo. Eat until you crash.'
   else tag.textContent = state.apples.length + ' apples on a 15×15 grid.'
 }
 
@@ -315,7 +317,7 @@ document.getElementById('join').addEventListener('click', () => {
 startButton.addEventListener('click', () => {
   if (!hosting || match) return
   const people = roster().slice(0, 4)
-  if (people.length < 2) return
+  if (!people.length) return
   channel.send({ type: 'broadcast', event: 'start', payload: { players: people } })
   begin(people)
 })
@@ -324,8 +326,8 @@ againButton.addEventListener('click', () => {
   if (!hosting) return
   const people = (match ? match.snakes : []).map((snake) => ({ id: snake.id, name: snake.name }))
   const still = people.filter((person) => roster().some((item) => item.id === person.id))
-  if (still.length < 2) {
-    tag.textContent = 'Need 2 players still in the room.'
+  if (!still.length) {
+    tag.textContent = 'Stay in the room to play again.'
     return
   }
   channel.send({ type: 'broadcast', event: 'start', payload: { players: still } })
