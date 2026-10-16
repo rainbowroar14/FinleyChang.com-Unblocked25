@@ -1,9 +1,9 @@
 export const GUN_FOV = Math.PI / 4
 export const KNIFE_FOV = Math.PI / 2
 export const FOV = GUN_FOV
-export const KNIFE_RANGE = 52
-export const WIDTH = 480
-export const HEIGHT = 480
+export const KNIFE_RANGE = 34
+export const WIDTH = 640
+export const HEIGHT = 640
 export const BOT_ID = 'stealth-bot'
 
 const SPEED = 128
@@ -11,36 +11,25 @@ const KNIFE_SPEED = SPEED * 1.3
 const BULLET_SPEED = 360
 
 export const WALLS = [
-  { x: 0, y: 0, w: 480, h: 18 },
-  { x: 0, y: 462, w: 480, h: 18 },
-  { x: 0, y: 0, w: 18, h: 480 },
-  { x: 462, y: 0, w: 18, h: 480 },
-  { x: 120, y: 18, w: 18, h: 110 },
-  { x: 120, y: 170, w: 18, h: 100 },
-  { x: 120, y: 320, w: 18, h: 90 },
-  { x: 240, y: 18, w: 18, h: 90 },
-  { x: 240, y: 150, w: 18, h: 120 },
-  { x: 240, y: 320, w: 18, h: 90 },
-  { x: 360, y: 18, w: 18, h: 120 },
-  { x: 360, y: 180, w: 18, h: 100 },
-  { x: 360, y: 330, w: 18, h: 80 },
-  { x: 18, y: 150, w: 70, h: 18 },
-  { x: 138, y: 150, w: 70, h: 18 },
-  { x: 258, y: 120, w: 70, h: 18 },
-  { x: 378, y: 200, w: 84, h: 18 },
-  { x: 18, y: 280, w: 70, h: 18 },
-  { x: 138, y: 280, w: 70, h: 18 },
-  { x: 258, y: 280, w: 70, h: 18 },
-  { x: 60, y: 380, w: 90, h: 18 },
-  { x: 200, y: 380, w: 90, h: 18 },
-  { x: 340, y: 400, w: 70, h: 18 },
-  { x: 180, y: 210, w: 50, h: 18 },
-  { x: 300, y: 210, w: 50, h: 18 },
+  { x: 0, y: 0, w: 640, h: 20 },
+  { x: 0, y: 620, w: 640, h: 20 },
+  { x: 0, y: 0, w: 20, h: 640 },
+  { x: 620, y: 0, w: 20, h: 640 },
+  { x: 210, y: 20, w: 20, h: 150 },
+  { x: 210, y: 260, w: 20, h: 120 },
+  { x: 430, y: 160, w: 20, h: 180 },
+  { x: 430, y: 430, w: 20, h: 140 },
+  { x: 20, y: 240, w: 110, h: 20 },
+  { x: 280, y: 240, w: 110, h: 20 },
+  { x: 20, y: 420, w: 100, h: 20 },
+  { x: 280, y: 420, w: 150, h: 20 },
+  { x: 500, y: 320, w: 120, h: 20 },
+  { x: 120, y: 520, w: 180, h: 20 },
 ]
 
 const STARTS = [
-  { x: 48, y: 420, a: -Math.PI / 2 },
-  { x: 430, y: 60, a: Math.PI / 2 },
+  { x: 60, y: 560, a: -Math.PI / 2 },
+  { x: 580, y: 80, a: Math.PI / 2 },
 ]
 
 const COLORS = ['#f4efe4', '#e23d3d']

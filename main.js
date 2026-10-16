@@ -1,6 +1,6 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 import { createTtt, place } from './ttt.js?v=1'
-import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID, advanceStealthRound } from './stealth.js?v=6'
+import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID, advanceStealthRound } from './stealth.js?v=7'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'

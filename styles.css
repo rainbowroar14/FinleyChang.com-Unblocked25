@@ -247,7 +247,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 canvas {
   display: block;
-  width: min(100%, 540px);
+  width: min(100%, 640px);
   height: auto;
   border-radius: 0;
   background: #0c140c;
