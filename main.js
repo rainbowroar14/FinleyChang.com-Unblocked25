@@ -1,8 +1,8 @@
-import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step } from './logic.js'
+import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
-const CELL = 28
+const CELL = 32
 
 const lobby = document.getElementById('lobby')
 const waiting = document.getElementById('waiting')
@@ -74,11 +74,12 @@ function paintRoster(list, target, inGame) {
     swatch.style.setProperty('--c', snake && !snake.alive ? '#8d8a82' : color)
     const label = document.createElement('span')
     const role = person.host ? ' · host' : ''
+    const fruits = snake ? snake.fruits || 0 : 0
     if (snake && !snake.alive) {
       item.className = 'dead'
-      label.textContent = person.name + role + ' · dead'
+      label.textContent = person.name + role + ' · ' + fruits + ' · dead'
     } else if (snake) {
-      label.textContent = person.name + role + ' · ' + snake.body.length
+      label.textContent = person.name + role + ' · ' + fruits
     } else if (index < 4) {
       label.textContent = person.name + role + (inGame ? '' : ' · ' + COLOR_NAMES[index])
     } else {
@@ -103,94 +104,62 @@ function refreshLobby() {
   } else waitEl.textContent = 'Waiting for the host to start.'
 }
 
-function drawEye(cx, cy, px, py, rotten) {
+function drawEye(x, y, ox, oy, rotten) {
+  const cx = x * CELL + Math.floor(CELL / 2) + ox
+  const cy = y * CELL + Math.floor(CELL / 2) + oy
   if (rotten) {
-    ctx.strokeStyle = '#1a1714'
-    ctx.lineWidth = Math.max(3, CELL * 0.16)
-    ctx.lineCap = 'round'
-    const s = CELL * 0.24
-    ctx.beginPath()
-    ctx.moveTo(cx - s, cy - s)
-    ctx.lineTo(cx + s, cy + s)
-    ctx.moveTo(cx + s, cy - s)
-    ctx.lineTo(cx - s, cy + s)
-    ctx.stroke()
+    ctx.fillStyle = '#16140f'
+    for (let i = -2; i <= 2; i += 1) {
+      ctx.fillRect(cx + i * 2 - 1, cy + i * 2 - 1, 3, 3)
+      ctx.fillRect(cx - i * 2 - 1, cy + i * 2 - 1, 3, 3)
+    }
     return
   }
-  ctx.fillStyle = '#fffaf3'
-  ctx.beginPath()
-  ctx.arc(cx, cy, CELL * 0.13, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = '#1c1917'
-  ctx.beginPath()
-  ctx.arc(cx + px, cy + py, CELL * 0.06, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.fillStyle = '#102010'
+  ctx.fillRect(cx - 3, cy - 3, 6, 6)
 }
 
 function drawSnake(snake) {
   const dead = !snake.alive
-  snake.body.forEach((point, index) => {
-    const cx = point.x * CELL + CELL / 2
-    const cy = point.y * CELL + CELL / 2
-    const blot = Math.abs((point.x * 13 + point.y * 7) % 4)
-    ctx.fillStyle = dead ? (blot === 0 ? '#6d735f' : blot === 1 ? '#3e4638' : '#8a8d84') : snake.color
-    ctx.beginPath()
-    ctx.arc(cx, cy, index === 0 ? CELL * 0.46 : CELL * 0.4, 0, Math.PI * 2)
-    ctx.fill()
+  snake.body.forEach((point) => {
+    const blot = Math.abs((point.x * 13 + point.y * 7) % 3)
+    ctx.fillStyle = dead ? (blot === 0 ? '#5c6552' : blot === 1 ? '#2f382c' : '#8b907f') : snake.color
+    ctx.fillRect(point.x * CELL + 2, point.y * CELL + 2, CELL - 4, CELL - 4)
     if (dead) {
-      ctx.fillStyle = blot % 2 === 0 ? '#2c3328' : '#55604a'
-      ctx.beginPath()
-      ctx.arc(cx + (blot - 1) * CELL * 0.08, cy + CELL * 0.08, CELL * 0.12, 0, Math.PI * 2)
-      ctx.fill()
+      ctx.fillStyle = '#1e261c'
+      ctx.fillRect(point.x * CELL + 8, point.y * CELL + 18, 8, 6)
     }
   })
   const head = snake.body[0]
   const face = DIRS[snake.dir] || DIRS.right
-  const hx = head.x * CELL + CELL / 2 + face.x * CELL * 0.08
-  const hy = head.y * CELL + CELL / 2 + face.y * CELL * 0.08
-  const sideX = -face.y * CELL * 0.16
-  const sideY = face.x * CELL * 0.16
-  const lookX = face.x * CELL * 0.05
-  const lookY = face.y * CELL * 0.05
-  drawEye(hx + sideX, hy + sideY, lookX, lookY, dead)
-  drawEye(hx - sideX, hy - sideY, lookX, lookY, dead)
+  const shift = 7
+  drawEye(head.x, head.y, face.x * 2 - face.y * shift, face.y * 2 + face.x * shift, dead)
+  drawEye(head.x, head.y, face.x * 2 + face.y * shift, face.y * 2 - face.x * shift, dead)
 }
 
 function drawApple(apple) {
-  const cx = apple.x * CELL + CELL / 2
-  const cy = apple.y * CELL + CELL / 2 + 1
-  ctx.fillStyle = '#e23d3d'
-  ctx.beginPath()
-  ctx.arc(cx, cy, CELL * 0.28, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = '#ffd0c8'
-  ctx.beginPath()
-  ctx.arc(cx - CELL * 0.08, cy - CELL * 0.08, CELL * 0.08, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.strokeStyle = '#6f8f45'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.moveTo(cx, cy - CELL * 0.26)
-  ctx.quadraticCurveTo(cx + CELL * 0.16, cy - CELL * 0.42, cx + CELL * 0.22, cy - CELL * 0.28)
-  ctx.stroke()
+  ctx.fillStyle = '#e23b2f'
+  ctx.fillRect(apple.x * CELL + 8, apple.y * CELL + 8, CELL - 16, CELL - 14)
+  ctx.fillStyle = '#67b33a'
+  ctx.fillRect(apple.x * CELL + 16, apple.y * CELL + 4, 4, 6)
 }
 
 export function draw(state) {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  ctx.fillStyle = '#17140f'
+  ctx.fillStyle = '#0c140c'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.strokeStyle = 'rgba(244, 239, 228, 0.05)'
+  ctx.strokeStyle = '#243024'
   ctx.lineWidth = 1
-  for (let x = 1; x < COLS; x += 1) {
+  for (let x = 0; x <= COLS; x += 1) {
     ctx.beginPath()
-    ctx.moveTo(x * CELL, 0)
-    ctx.lineTo(x * CELL, ROWS * CELL)
+    ctx.moveTo(x * CELL + 0.5, 0)
+    ctx.lineTo(x * CELL + 0.5, ROWS * CELL)
     ctx.stroke()
   }
-  for (let y = 1; y < ROWS; y += 1) {
+  for (let y = 0; y <= ROWS; y += 1) {
     ctx.beginPath()
-    ctx.moveTo(0, y * CELL)
-    ctx.lineTo(COLS * CELL, y * CELL)
+    ctx.moveTo(0, y * CELL + 0.5)
+    ctx.lineTo(COLS * CELL, y * CELL + 0.5)
     ctx.stroke()
   }
   if (!state) return
@@ -202,9 +171,10 @@ export function draw(state) {
 function outcomeText(state) {
   if (!state || !state.over) return ''
   const winner = state.snakes.find((snake) => snake.id === state.winner)
-  if (!winner) return 'Everyone crashed.'
-  if (winner.id === myId) return 'You win.'
-  return winner.name + ' wins.'
+  if (!winner) return 'Tie on fruits.'
+  const fruits = winner.fruits || 0
+  if (winner.id === myId) return 'You win. ' + fruits + ' fruits.'
+  return winner.name + ' wins. ' + fruits + ' fruits.'
 }
 
 function showMatch(state) {
@@ -220,9 +190,10 @@ function showMatch(state) {
   banner.hidden = !state.over
   banner.textContent = outcomeText(state)
   againButton.hidden = !(hosting && state.over)
-  if (mine && !mine.alive && !state.over) tag.textContent = 'You are out. Your body stays until the game ends.'
+  if (mine && !mine.alive && !state.over) tag.textContent = 'You are out. They only win once they have more fruits.'
   else if (state.over) tag.textContent = outcomeText(state)
-  else tag.textContent = state.apples.length + ' apples. Block someone in and they stay down.'
+  else if (state.snakes.some((snake) => !snake.alive)) tag.textContent = 'Still going. Most fruits wins.'
+  else tag.textContent = state.apples.length + ' apples on a 15×15 grid.'
 }
 
 function broadcast() {
@@ -250,7 +221,7 @@ function begin(players) {
   broadcast()
   if (hosting) {
     window.clearInterval(timer)
-    timer = window.setInterval(tick, 140)
+    timer = window.setInterval(tick, 180)
   }
 }
 
@@ -274,19 +245,16 @@ function openRoom(code, asHost) {
   })
   channel.on('presence', { event: 'leave' }, ({ key }) => {
     if (!hosting && key === hostId) tag.textContent = 'The host left.'
-    if (hosting && match) {
+    if (hosting && match && !match.over) {
       const snake = match.snakes.find((item) => item.id === key && item.alive)
       if (snake) {
-        snake.alive = false
-        const living = match.snakes.filter((item) => item.alive)
-        if (living.length <= 1) {
-          match.over = true
-          match.winner = living[0] ? living[0].id : null
+        match = markDead(match, key)
+        showMatch(match)
+        broadcast()
+        if (match.over) {
           window.clearInterval(timer)
           timer = 0
         }
-        showMatch(match)
-        broadcast()
       }
     }
     if (!match) refreshLobby()

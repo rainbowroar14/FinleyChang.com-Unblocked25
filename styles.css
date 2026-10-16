@@ -1,7 +1,7 @@
 :root {
   color: #f4efe4;
   background: #100e0c;
-  font-family: "Segoe UI", ui-sans-serif, sans-serif;
+  font-family: "Courier New", ui-monospace, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -146,10 +146,12 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 canvas {
   display: block;
-  width: 100%;
+  width: min(100%, 540px);
   height: auto;
-  border-radius: 12px;
-  background: #17140f;
+  border-radius: 0;
+  background: #0c140c;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .banner {

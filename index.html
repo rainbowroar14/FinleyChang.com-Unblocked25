@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Snake</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314120e'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23e23d3d'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=2" />
   </head>
   <body>
     <header class="top">
@@ -29,7 +29,7 @@
           <input id="room" maxlength="4" placeholder="Code" aria-label="Room code" autocapitalize="characters" />
           <button type="button" id="join">Join</button>
         </div>
-        <p class="note">Apples match the number of players. Trap someone and their body stays on the board.</p>
+        <p class="note">A 15×15 grid. Apples match the players. A death ends the game only when someone else has more fruits.</p>
         <p class="error" id="error" hidden></p>
       </form>
       <div id="waiting" hidden>
@@ -41,12 +41,12 @@
 
     <section class="play" id="play" hidden>
       <div class="stage">
-        <canvas id="board" width="896" height="616"></canvas>
+        <canvas id="board" width="480" height="480"></canvas>
         <p class="banner" id="banner" hidden></p>
       </div>
       <aside>
         <ol class="players" id="score"></ol>
-        <p class="help">Arrows or WASD. You cannot turn back on yourself.</p>
+        <p class="help">Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.</p>
         <div class="pad" id="pad">
           <button type="button" data-dir="up" aria-label="Up">↑</button>
           <button type="button" data-dir="left" aria-label="Left">←</button>
@@ -58,6 +58,6 @@
     </section>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-    <script type="module" src="main.js"></script>
+    <script type="module" src="main.js?v=3"></script>
   </body>
 </html>

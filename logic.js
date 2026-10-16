@@ -1,5 +1,5 @@
-export const COLS = 32
-export const ROWS = 22
+export const COLS = 15
+export const ROWS = 15
 export const COLORS = ['#3ddc97', '#5b8cff', '#ff5d73', '#ffb020']
 export const COLOR_NAMES = ['Green', 'Blue', 'Pink', 'Amber']
 
@@ -13,10 +13,10 @@ export const DIRS = {
 const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' }
 
 const STARTS = [
-  { dir: 'right', x: 5, y: 6, back: 'left' },
-  { dir: 'left', x: 26, y: 15, back: 'right' },
-  { dir: 'down', x: 12, y: 4, back: 'up' },
-  { dir: 'up', x: 20, y: 17, back: 'down' },
+  { dir: 'right', x: 3, y: 3, back: 'left' },
+  { dir: 'left', x: 11, y: 11, back: 'right' },
+  { dir: 'down', x: 11, y: 3, back: 'up' },
+  { dir: 'up', x: 3, y: 11, back: 'down' },
 ]
 
 function line(x, y, back, length) {
@@ -34,8 +34,9 @@ export function createMatch(players, rng = Math.random) {
       name: player.name,
       color: COLORS[index],
       dir: start.dir,
-      body: line(start.x, start.y, start.back, 4),
+      body: line(start.x, start.y, start.back, 3),
       alive: true,
+      fruits: 0,
     }
   })
   const state = { snakes, apples: [], tick: 0, over: false, winner: null }
@@ -78,12 +79,36 @@ function refillApples(state, rng) {
   }
 }
 
-function finish(state) {
+function bestFruit(snakes) {
+  return Math.max(...snakes.map((snake) => snake.fruits || 0))
+}
+
+export function settle(state) {
   const living = state.snakes.filter((snake) => snake.alive)
-  if (living.length > 1) return state
-  state.over = true
-  state.winner = living[0] ? living[0].id : null
+  const dead = state.snakes.filter((snake) => !snake.alive)
+  if (!dead.length) return state
+  const top = bestFruit(state.snakes)
+  const leaders = state.snakes.filter((snake) => (snake.fruits || 0) === top)
+  if (!living.length) {
+    state.over = true
+    state.winner = leaders.length === 1 ? leaders[0].id : null
+    return state
+  }
+  const deadTop = bestFruit(dead)
+  const ahead = living.filter((snake) => (snake.fruits || 0) > deadTop)
+  if (ahead.length === 1) {
+    state.over = true
+    state.winner = ahead[0].id
+  }
   return state
+}
+
+export function markDead(state, id) {
+  if (state.over) return state
+  const snake = state.snakes.find((item) => item.id === id && item.alive)
+  if (!snake) return state
+  snake.alive = false
+  return settle(state)
 }
 
 export function step(state, wanted = {}, rng = Math.random) {
@@ -159,10 +184,13 @@ export function step(state, wanted = {}, rng = Math.random) {
     }
     snake.dir = moves[i].dir
     snake.body = placed[i]
-    if (grown[i]) eaten.push(keyOf(moves[i]))
+    if (grown[i]) {
+      snake.fruits = (snake.fruits || 0) + 1
+      eaten.push(keyOf(moves[i]))
+    }
   }
 
   next.apples = apples.filter((apple) => !eaten.includes(keyOf(apple)))
   refillApples(next, rng)
-  return finish(next)
+  return settle(next)
 }
