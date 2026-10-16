@@ -178,6 +178,8 @@ export function createStealthMatch(players, options = {}) {
     seriesWinner: null,
     slash: 0,
     pings: [],
+    botHunt: null,
+    botWander: null,
     players: seats.map((person, index) => {
       const spawn = STARTS[index]
       const weapon = person.id === loadout.knifeId ? 'knife' : 'gun'
@@ -217,27 +219,53 @@ export function botInput(state, botId) {
   const bot = state.players.find((player) => player.id === botId)
   const foe = state.players.find((player) => player.id !== botId && player.alive)
   if (!bot || !bot.alive || !foe) return empty
-  const aim = Math.atan2(foe.y - bot.y, foe.x - bot.x)
   const fov = fovFor(bot.weapon)
-  const dist = Math.hypot(foe.x - bot.x, foe.y - bot.y)
-  const see = canSee(bot.x, bot.y, aim, foe.x, foe.y, fov)
-  const dx = foe.x - bot.x
-  const dy = foe.y - bot.y
+  const see = canSeePart(bot.x, bot.y, bot.a, foe.x, foe.y, foe.r || 9, fov)
+  if (see) {
+    state.botHunt = { x: foe.x, y: foe.y, ttl: 2.5 }
+  } else {
+    const ping = (state.pings || []).find((entry) => entry.owner === foe.id)
+    if (ping) state.botHunt = { x: ping.x, y: ping.y, ttl: 2.5 }
+  }
+  const hunt = state.botHunt && state.botHunt.ttl > 0 ? state.botHunt : null
+  let tx = null
+  let ty = null
+  if (see) {
+    tx = foe.x
+    ty = foe.y
+  } else if (hunt) {
+    tx = hunt.x
+    ty = hunt.y
+  }
+  let aim = bot.a
   let mx = 0
   let my = 0
-  if (bot.weapon === 'knife') {
-    mx = dx > 8 ? 1 : dx < -8 ? -1 : 0
-    my = dy > 8 ? 1 : dy < -8 ? -1 : 0
-  } else if (see && dist < 90) {
-    mx = dx > 0 ? -1 : 1
-    my = dy > 0 ? -1 : 1
-  } else {
-    mx = dx > 12 ? 1 : dx < -12 ? -1 : 0
-    my = dy > 12 ? 1 : dy < -12 ? -1 : 0
-    if (!see) {
-      if (Math.abs(dx) > Math.abs(dy) * 1.4) my = 0
-      else if (Math.abs(dy) > Math.abs(dx) * 1.4) mx = 0
+  let fire = false
+  if (tx !== null) {
+    const dx = tx - bot.x
+    const dy = ty - bot.y
+    const dist = Math.hypot(dx, dy)
+    aim = Math.atan2(dy, dx)
+    if (bot.weapon === 'knife') {
+      mx = dx > 8 ? 1 : dx < -8 ? -1 : 0
+      my = dy > 8 ? 1 : dy < -8 ? -1 : 0
+    } else if (see && dist < 90) {
+      mx = dx > 0 ? -1 : 1
+      my = dy > 0 ? -1 : 1
+    } else {
+      mx = dx > 12 ? 1 : dx < -12 ? -1 : 0
+      my = dy > 12 ? 1 : dy < -12 ? -1 : 0
     }
+    if (see) fire = bot.weapon === 'knife' ? dist <= KNIFE_RANGE : true
+    else if (dist < 22) state.botHunt = null
+  } else {
+    if (typeof state.botWander !== 'number') state.botWander = bot.a
+    state.botWander += (Math.random() - 0.5) * 0.35
+    aim = state.botWander
+    const fx = Math.cos(aim)
+    const fy = Math.sin(aim)
+    mx = fx > 0.28 ? 1 : fx < -0.28 ? -1 : 0
+    my = fy > 0.28 ? 1 : fy < -0.28 ? -1 : 0
   }
   return {
     w: my < 0,
@@ -245,7 +273,7 @@ export function botInput(state, botId) {
     s: my > 0,
     d: mx > 0,
     aim,
-    fire: bot.weapon === 'knife' ? see && dist <= KNIFE_RANGE : see,
+    fire,
   }
 }
 
@@ -287,6 +315,11 @@ export function stepStealth(state, inputs, dt) {
     pings: (state.pings || [])
       .map((ping) => ({ ...ping, age: (ping.age || 0) + dt }))
       .filter((ping) => ping.age < (ping.life || 1)),
+    botHunt:
+      state.botHunt && (state.botHunt.ttl || 0) > dt
+        ? { ...state.botHunt, ttl: state.botHunt.ttl - dt }
+        : null,
+    botWander: state.botWander,
     players: state.players.map((player) => ({ ...player })),
     bullets: state.bullets.map((bullet) => ({ ...bullet })),
     scores: { ...state.scores },
