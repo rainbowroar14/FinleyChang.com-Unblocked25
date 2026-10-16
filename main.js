@@ -1,6 +1,6 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 import { createTtt, place } from './ttt.js?v=1'
-import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID, advanceStealthRound } from './stealth.js?v=5'
+import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID, advanceStealthRound } from './stealth.js?v=6'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
@@ -294,7 +294,7 @@ function showBoard(game) {
   helpEl.textContent = game === 'ttt'
     ? 'Tap a square on your turn. Three in a row wins.'
     : game === 'stealth'
-      ? 'Best of 3. Knife sees 90° and slashes close. Gun sees 45° and shoots. WASD + mouse.'
+      ? 'Best of 3. Knife: 90°, 2 HP, faster. Gun: 45°. WASD + mouse.'
       : 'Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.'
   banner.classList.toggle('under', game === 'ttt')
   mark.textContent = GAME_LABEL[game] || 'Games'
@@ -404,12 +404,15 @@ function showStealth(state) {
     if (!player.alive) item.className = 'dead'
     const label = document.createElement('span')
     const weapon = player.weapon === 'knife' ? 'knife' : 'gun'
+    const hp = typeof player.hp === 'number' ? player.hp : player.maxHp || 1
     label.textContent =
       player.name +
       (player.id === myId ? ' · you' : '') +
       ' · ' +
       weapon +
       ' · ' +
+      hp +
+      ' hp · ' +
       (state.scores[player.id] || 0) +
       (player.alive ? '' : ' · down')
     item.append(label)
@@ -418,7 +421,9 @@ function showStealth(state) {
   if (!state.over) {
     banner.hidden = true
     againButton.hidden = true
-    const mineWeapon = mine && mine.weapon === 'knife' ? 'Knife (90°). Click to slash.' : 'Gun (45°). Click to shoot.'
+    const mineWeapon = mine && mine.weapon === 'knife'
+      ? 'Knife (90°, 2 HP, faster). Click to slash.'
+      : 'Gun (45°). Click to shoot.'
     tag.textContent = 'Round ' + state.round + '. ' + mineWeapon
     return
   }

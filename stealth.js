@@ -7,6 +7,7 @@ export const HEIGHT = 480
 export const BOT_ID = 'stealth-bot'
 
 const SPEED = 128
+const KNIFE_SPEED = SPEED * 1.3
 const BULLET_SPEED = 360
 
 export const WALLS = [
@@ -14,13 +15,27 @@ export const WALLS = [
   { x: 0, y: 462, w: 480, h: 18 },
   { x: 0, y: 0, w: 18, h: 480 },
   { x: 462, y: 0, w: 18, h: 480 },
-  { x: 150, y: 18, w: 22, h: 120 },
-  { x: 150, y: 190, w: 160, h: 22 },
-  { x: 290, y: 18, w: 22, h: 80 },
-  { x: 290, y: 250, w: 22, h: 212 },
-  { x: 70, y: 330, w: 180, h: 22 },
-  { x: 330, y: 150, w: 80, h: 22 },
-  { x: 330, y: 150, w: 22, h: 170 },
+  { x: 120, y: 18, w: 18, h: 110 },
+  { x: 120, y: 170, w: 18, h: 100 },
+  { x: 120, y: 320, w: 18, h: 90 },
+  { x: 240, y: 18, w: 18, h: 90 },
+  { x: 240, y: 150, w: 18, h: 120 },
+  { x: 240, y: 320, w: 18, h: 90 },
+  { x: 360, y: 18, w: 18, h: 120 },
+  { x: 360, y: 180, w: 18, h: 100 },
+  { x: 360, y: 330, w: 18, h: 80 },
+  { x: 18, y: 150, w: 70, h: 18 },
+  { x: 138, y: 150, w: 70, h: 18 },
+  { x: 258, y: 120, w: 70, h: 18 },
+  { x: 378, y: 200, w: 84, h: 18 },
+  { x: 18, y: 280, w: 70, h: 18 },
+  { x: 138, y: 280, w: 70, h: 18 },
+  { x: 258, y: 280, w: 70, h: 18 },
+  { x: 60, y: 380, w: 90, h: 18 },
+  { x: 200, y: 380, w: 90, h: 18 },
+  { x: 340, y: 400, w: 70, h: 18 },
+  { x: 180, y: 210, w: 50, h: 18 },
+  { x: 300, y: 210, w: 50, h: 18 },
 ]
 
 const STARTS = [
@@ -169,6 +184,8 @@ export function createStealthMatch(players, options = {}) {
         name: person.name || 'Player',
         color: COLORS[index],
         weapon,
+        hp: weapon === 'knife' ? 2 : 1,
+        maxHp: weapon === 'knife' ? 2 : 1,
         x: spawn.x,
         y: spawn.y,
         r: 9,
@@ -243,6 +260,19 @@ function scoreRound(state, winnerId) {
   return { scores, seriesOver, seriesWinner }
 }
 
+function hurt(next, target, attackerId) {
+  target.hp = Math.max(0, (target.hp || 1) - 1)
+  if (target.hp > 0) return false
+  target.alive = false
+  next.over = true
+  next.winner = attackerId
+  const scored = scoreRound(next, attackerId)
+  next.scores = scored.scores
+  next.seriesOver = scored.seriesOver
+  next.seriesWinner = scored.seriesWinner
+  return true
+}
+
 export function stepStealth(state, inputs, dt) {
   if (!state || state.over) return state
   const next = {
@@ -269,7 +299,8 @@ export function stepStealth(state, inputs, dt) {
     if (input.s) my += 1
     if (mx || my) {
       const len = Math.hypot(mx, my) || 1
-      slide(player, (mx / len) * SPEED * dt, (my / len) * SPEED * dt)
+      const speed = player.weapon === 'knife' ? KNIFE_SPEED : SPEED
+      slide(player, (mx / len) * speed * dt, (my / len) * speed * dt)
     }
     player.cool = Math.max(0, player.cool - dt)
     if (!input.fire || player.cool > 0 || next.over) return
@@ -281,15 +312,7 @@ export function stepStealth(state, inputs, dt) {
         const dist = Math.hypot(other.x - player.x, other.y - player.y)
         return dist <= KNIFE_RANGE && canSee(player.x, player.y, player.a, other.x, other.y, KNIFE_FOV)
       })
-      if (foe) {
-        foe.alive = false
-        next.over = true
-        next.winner = player.id
-        const scored = scoreRound(next, player.id)
-        next.scores = scored.scores
-        next.seriesOver = scored.seriesOver
-        next.seriesWinner = scored.seriesWinner
-      }
+      if (foe) hurt(next, foe, player.id)
       return
     }
     player.cool = 0.28
@@ -317,13 +340,7 @@ export function stepStealth(state, inputs, dt) {
         nearSegment(bullet.x, bullet.y, nx, ny, player.x, player.y) < player.r + 3,
     )
     if (hit) {
-      hit.alive = false
-      next.over = true
-      next.winner = bullet.owner
-      const scored = scoreRound(next, bullet.owner)
-      next.scores = scored.scores
-      next.seriesOver = scored.seriesOver
-      next.seriesWinner = scored.seriesWinner
+      hurt(next, hit, bullet.owner)
       return false
     }
     if (travel < dist - 0.1) return false
