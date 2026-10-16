@@ -6,17 +6,17 @@ const TURN = 2.4
 const SPEED = 112
 const BULLET_SPEED = 340
 
-const WALLS = [
+export const WALLS = [
   { x: 0, y: 0, w: 480, h: 18 },
   { x: 0, y: 462, w: 480, h: 18 },
   { x: 0, y: 0, w: 18, h: 480 },
   { x: 462, y: 0, w: 18, h: 480 },
-  { x: 150, y: 18, w: 22, h: 210 },
+  { x: 150, y: 18, w: 22, h: 120 },
   { x: 150, y: 190, w: 160, h: 22 },
-  { x: 290, y: 18, w: 22, h: 110 },
+  { x: 290, y: 18, w: 22, h: 80 },
   { x: 290, y: 250, w: 22, h: 212 },
   { x: 70, y: 330, w: 180, h: 22 },
-  { x: 330, y: 150, w: 132, h: 22 },
+  { x: 330, y: 150, w: 80, h: 22 },
   { x: 330, y: 150, w: 22, h: 170 },
 ]
 
@@ -129,9 +129,9 @@ function makeWorld() {
     cool: 0,
     player: { x: 48, y: 400, r: 9, a: -Math.PI / 2 },
     guards: [
-      makeGuard(78, 90, [{ x: 78, y: 90 }, { x: 78, y: 250 }]),
-      makeGuard(360, 78, [{ x: 360, y: 78 }, { x: 430, y: 78 }]),
-      makeGuard(390, 400, [{ x: 390, y: 400 }, { x: 390, y: 280 }]),
+      makeGuard(200, 80, [{ x: 200, y: 80 }, { x: 250, y: 80 }]),
+      makeGuard(370, 80, [{ x: 370, y: 80 }, { x: 430, y: 80 }]),
+      makeGuard(400, 390, [{ x: 400, y: 390 }, { x: 400, y: 280 }]),
     ],
     bullets: [],
   }
@@ -155,13 +155,21 @@ function shoot(world, x, y, angle, fromGuard) {
   })
 }
 
-function step(world, dt, held, fire) {
+function step(world, dt, held, fire, nudge) {
   if (world.over) return
   const player = world.player
   if (held.left) player.a -= TURN * dt
   if (held.right) player.a += TURN * dt
+  if (nudge.left) player.a -= 0.4 * nudge.left
+  if (nudge.right) player.a += 0.4 * nudge.right
+  const taps = (nudge.forward || 0) - (nudge.back || 0)
+  nudge.left = 0
+  nudge.right = 0
+  nudge.forward = 0
+  nudge.back = 0
   const move = (held.forward ? 1 : 0) - (held.back ? 1 : 0)
-  if (move) slide(player, Math.cos(player.a) * SPEED * move * dt, Math.sin(player.a) * SPEED * move * dt, WALLS)
+  const dist = SPEED * move * dt + taps * 34
+  if (dist) slide(player, Math.cos(player.a) * dist, Math.sin(player.a) * dist, WALLS)
   world.cool = Math.max(0, world.cool - dt)
   if (fire && world.cool <= 0) {
     world.cool = 0.28
@@ -277,6 +285,7 @@ function draw(ctx, world) {
 export function createStealth(canvas, onReport) {
   const ctx = canvas.getContext('2d')
   const held = { forward: false, back: false, left: false, right: false }
+  const nudge = { forward: 0, back: 0, left: 0, right: 0 }
   let world = makeWorld()
   let raf = 0
   let last = 0
@@ -296,7 +305,7 @@ export function createStealth(canvas, onReport) {
     last = now
     const shot = fire
     fire = false
-    step(world, dt, held, shot)
+    step(world, dt, held, shot, nudge)
     draw(ctx, world)
     report()
     raf = requestAnimationFrame(loop)
@@ -318,6 +327,13 @@ export function createStealth(canvas, onReport) {
     },
     hold(name, down) {
       if (name in held) held[name] = down
+    },
+    poke(name) {
+      if (name === 'shoot') {
+        if (running && !world.over) fire = true
+        return
+      }
+      if (name in nudge) nudge[name] += 1
     },
     shoot() {
       if (running && !world.over) fire = true

@@ -1,6 +1,6 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 import { createTtt, place } from './ttt.js?v=1'
-import { createStealth } from './stealth.js?v=1'
+import { createStealth } from './stealth.js?v=2'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
@@ -719,9 +719,12 @@ stealthPad.addEventListener('pointerdown', (event) => {
   const button = event.target.closest('button')
   if (!button || !button.dataset.act) return
   event.preventDefault()
-  button.setPointerCapture(event.pointerId)
+  try { button.setPointerCapture(event.pointerId) } catch (err) { /* a tap still counts */ }
   if (button.dataset.act === 'shoot') ensureStealth().shoot()
-  else ensureStealth().hold(button.dataset.act, true)
+  else {
+    ensureStealth().hold(button.dataset.act, true)
+    ensureStealth().poke(button.dataset.act)
+  }
 })
 stealthPad.addEventListener('pointerup', releaseStealth)
 stealthPad.addEventListener('pointercancel', releaseStealth)
