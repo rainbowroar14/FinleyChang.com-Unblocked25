@@ -1,0 +1,184 @@
+:root {
+  color: #f4efe4;
+  background: #100e0c;
+  font-family: "Segoe UI", ui-sans-serif, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, #2a2118 0, transparent 42%),
+    #100e0c;
+}
+
+button, input { font: inherit; }
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+  padding: 22px 28px 8px;
+}
+
+.mark {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.tag, .help, .note, .wait, .error {
+  margin: 4px 0 0;
+  color: #b7ab9a;
+  font-size: 14px;
+}
+
+.code {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #241c16;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.lobby, .play {
+  width: min(1100px, calc(100% - 32px));
+  margin: 12px auto 28px;
+}
+
+.lobby form, #waiting, .play aside, .stage {
+  background: #1a1612;
+  border: 1px solid #3a3128;
+  border-radius: 18px;
+}
+
+.lobby form, #waiting {
+  padding: 22px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #d9cbb8;
+}
+
+input {
+  width: min(280px, 100%);
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #2a231c;
+  color: #fffaf3;
+}
+
+.row { display: flex; gap: 8px; margin-top: 14px; }
+
+.join input { width: 110px; letter-spacing: 0.14em; text-transform: uppercase; }
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #3a3128;
+  color: #fffaf3;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.primary { background: #e23d3d; color: #fff7f4; }
+
+button:disabled { opacity: 0.45; cursor: default; }
+
+.error { color: #ffb4a8; }
+
+.players {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.players li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 99px;
+  background: var(--c, #8d8a82);
+  box-shadow: 0 0 0 2px rgba(255, 250, 243, 0.16);
+}
+
+.players .dead { color: #8d8a82; }
+
+.play[hidden],
+#waiting[hidden],
+#setup[hidden],
+.banner[hidden],
+.code[hidden],
+.error[hidden],
+#again[hidden],
+#start[hidden] {
+  display: none;
+}
+
+.play {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 14px;
+  align-items: start;
+}
+
+.stage { position: relative; padding: 12px; }
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  background: #17140f;
+}
+
+.banner {
+  position: absolute;
+  left: 50%;
+  top: 28px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(16, 14, 12, 0.88);
+  font-weight: 800;
+}
+
+.play aside {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.pad {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.pad button { font-size: 20px; padding: 12px; }
+
+@media (max-width: 800px) {
+  .play { grid-template-columns: 1fr; }
+  .top { padding: 16px 16px 0; }
+}
