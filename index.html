@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Games</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314120e'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23e23d3d'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="styles.css?v=7" />
+    <link rel="stylesheet" href="styles.css?v=8" />
   </head>
   <body>
     <header class="top">
@@ -34,6 +34,10 @@
           <button type="button" class="game-card" data-game="stealth" id="pick-stealth" aria-pressed="false">
             <span class="game-name">Stealth</span>
             <span class="game-meta">1v1 or bot</span>
+          </button>
+          <button type="button" class="game-card" data-game="chain" id="pick-chain" aria-pressed="false">
+            <span class="game-name">Chain Up</span>
+            <span class="game-meta">2 linked</span>
           </button>
         </div>
         <div class="row">
@@ -64,6 +68,9 @@
         <div class="stage" id="stealth-stage" hidden>
           <canvas id="stealth" width="640" height="640"></canvas>
         </div>
+        <div class="stage" id="chain-stage" hidden>
+          <canvas id="chain" width="640" height="720"></canvas>
+        </div>
         <div class="stage" id="ttt-stage" hidden>
           <div class="ttt" id="grid">
             <button type="button" data-i="0" aria-label="Top left"></button>
@@ -93,6 +100,6 @@
     </section>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-    <script type="module" src="main.js?v=24"></script>
+    <script type="module" src="main.js?v=25"></script>
   </body>
 </html>

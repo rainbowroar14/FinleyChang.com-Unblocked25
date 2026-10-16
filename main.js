@@ -1,11 +1,18 @@
 import { COLS, ROWS, COLORS, COLOR_NAMES, DIRS, createMatch, step, markDead } from './logic.js?v=2'
 import { createTtt, place } from './ttt.js?v=1'
-import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID, advanceStealthRound } from './stealth.js?v=12'
+import { createStealthMatch, stepStealth, drawStealth, botInput, BOT_ID, advanceStealthRound } from './stealth.js?v=13'
+import {
+  createChainMatch,
+  stepChain,
+  drawChain,
+  botInput as chainBotInput,
+  BOT_ID as CHAIN_BOT_ID,
+} from './chain.js?v=1'
 
 const URL = 'https://pntixrcmuhorvpcrhmim.supabase.co'
 const KEY = 'sb_publishable_imt_ECRX2UEGTipRK9oWow_nhaLSRv8'
 const CELL = 32
-const GAME_LABEL = { snake: 'Snake', ttt: 'Tic Tac Toe', stealth: 'Stealth' }
+const GAME_LABEL = { snake: 'Snake', ttt: 'Tic Tac Toe', stealth: 'Stealth', chain: 'Chain Up' }
 
 const lobby = document.getElementById('lobby')
 const waiting = document.getElementById('waiting')
@@ -27,10 +34,12 @@ const pad = document.getElementById('pad')
 const grid = document.getElementById('grid')
 const canvas = document.getElementById('board')
 const stealthCanvas = document.getElementById('stealth')
+const chainCanvas = document.getElementById('chain')
 canvas.width = COLS * CELL
 canvas.height = ROWS * CELL
 const ctx = canvas.getContext('2d')
 const stealthCtx = stealthCanvas.getContext('2d')
+const chainCtx = chainCanvas.getContext('2d')
 
 const myId = localStorage.getItem('snake-id') || crypto.randomUUID()
 localStorage.setItem('snake-id', myId)
@@ -51,12 +60,16 @@ let match = null
 let timer = 0
 let stealthLast = 0
 let stealthNextTimer = 0
+let chainLast = 0
 let picked = 'snake'
 const desired = {}
 const stealthInputs = {}
 const stealthHeld = { w: false, a: false, s: false, d: false }
 let stealthAim = -Math.PI / 2
 let stealthFire = false
+const chainInputs = {}
+const chainHeld = { left: false, right: false }
+let chainJump = false
 const gamesEl = document.getElementById('games')
 const gamesEmpty = document.getElementById('games-empty')
 
@@ -92,7 +105,7 @@ function alphabetCode() {
 }
 
 function gameOf(value) {
-  if (value === 'ttt' || value === 'stealth') return value
+  if (value === 'ttt' || value === 'stealth' || value === 'chain') return value
   return 'snake'
 }
 
@@ -103,7 +116,7 @@ function maxPlayers() {
 function selectGame(game) {
   picked = gameOf(game)
   localStorage.setItem('game-pick', picked)
-  ;['snake', 'ttt', 'stealth'].forEach((id) => {
+  ;['snake', 'ttt', 'stealth', 'chain'].forEach((id) => {
     const card = document.getElementById('pick-' + id)
     const on = picked === id
     card.classList.toggle('on', on)
@@ -119,7 +132,9 @@ function selectGame(game) {
       ? 'Tic Tac Toe. Host a public game or join one.'
       : picked === 'stealth'
         ? 'Stealth best of 3. Knife vs gun. Fight a bot or host a 1v1.'
-        : 'Snake. Host a public game or join one.'
+        : picked === 'chain'
+          ? 'Chain Up. Two climbers linked by a chain. Host or join.'
+          : 'Snake. Host a public game or join one.'
   }
 }
 
@@ -172,7 +187,7 @@ function paintWaiting(people) {
     const label = document.createElement('span')
     let seat = 'watching'
     if (roomGame === 'ttt') seat = index === 0 ? 'X' : index === 1 ? 'O' : 'watching'
-    else if (roomGame === 'stealth') seat = index < 2 ? 'player' : 'watching'
+    else if (roomGame === 'stealth' || roomGame === 'chain') seat = index < 2 ? 'player' : 'watching'
     label.textContent = person.name + (person.host ? ' · host' : '') + ' · ' + seat
     item.append(label)
     playersEl.appendChild(item)
@@ -199,6 +214,14 @@ function refreshLobby() {
       waitEl.textContent = count < 2
         ? 'Room ' + roomCode + '. Fight a bot, or wait for a player.'
         : 'Room ' + roomCode + '. Ready to start.'
+    } else waitEl.textContent = 'Waiting for the host to start.'
+  } else if (roomGame === 'chain') {
+    startButton.disabled = count < 1
+    startButton.textContent = count < 2 ? 'Vs bot' : 'Start duo'
+    if (hosting) {
+      waitEl.textContent = count < 2
+        ? 'Room ' + roomCode + '. Climb with a bot, or wait for a partner.'
+        : 'Room ' + roomCode + '. Ready to climb.'
     } else waitEl.textContent = 'Waiting for the host to start.'
   } else {
     startButton.disabled = count < 1
@@ -290,12 +313,15 @@ function showBoard(game) {
   document.getElementById('snake-stage').hidden = game !== 'snake'
   document.getElementById('ttt-stage').hidden = game !== 'ttt'
   document.getElementById('stealth-stage').hidden = game !== 'stealth'
+  document.getElementById('chain-stage').hidden = game !== 'chain'
   pad.hidden = game !== 'snake'
   helpEl.textContent = game === 'ttt'
     ? 'Tap a square on your turn. Three in a row wins.'
     : game === 'stealth'
       ? 'Best of 3. Knife: 90°, 2 HP, faster. Gun: 45°. WASD + mouse.'
-      : 'Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.'
+      : game === 'chain'
+        ? 'A/D or arrows to move. Space / W / ↑ to jump. Stay within the chain.'
+        : 'Arrows or WASD. Most fruits wins. Dead snakes stay on the grid.'
   banner.classList.toggle('under', game === 'ttt')
   mark.textContent = GAME_LABEL[game] || 'Games'
 }
@@ -556,6 +582,58 @@ function clearStealthNext() {
   stealthNextTimer = 0
 }
 
+function localChainInput() {
+  const jump = chainJump
+  chainJump = false
+  return {
+    left: chainHeld.left,
+    right: chainHeld.right,
+    jump,
+  }
+}
+
+function showChain(state) {
+  match = state
+  drawChain(chainCtx, state)
+  scoreEl.replaceChildren()
+  state.players.forEach((player) => {
+    const item = document.createElement('li')
+    const swatch = document.createElement('span')
+    swatch.className = 'swatch'
+    swatch.style.setProperty('--c', player.color)
+    const label = document.createElement('span')
+    const height = Math.max(0, Math.round(680 - (player.y + player.h)))
+    label.textContent =
+      player.name + (player.id === myId ? ' · you' : '') + ' · ' + height + 'm'
+    item.append(swatch, label)
+    scoreEl.appendChild(item)
+  })
+  banner.hidden = true
+  againButton.hidden = true
+  againButton.disabled = false
+  tag.textContent = 'Climb together. Don’t snap the chain.'
+}
+
+function chainTick() {
+  if (!hosting || roomGame !== 'chain' || !match || match.over) {
+    stopStealthLoop()
+    return
+  }
+  const now = performance.now()
+  const dt = Math.min(0.05, (now - chainLast) / 1000 || 0.033)
+  chainLast = now
+  chainInputs[myId] = localChainInput()
+  if (match.players.some((player) => player.id === CHAIN_BOT_ID)) {
+    chainInputs[CHAIN_BOT_ID] = chainBotInput(match, CHAIN_BOT_ID)
+  }
+  match = stepChain(match, chainInputs, dt)
+  Object.keys(chainInputs).forEach((id) => {
+    if (chainInputs[id]) chainInputs[id].jump = false
+  })
+  showChain(match)
+  broadcast()
+}
+
 function stealthTick() {
   if (!hosting || roomGame !== 'stealth' || !match || match.over) {
     stopStealthLoop()
@@ -604,6 +682,7 @@ function begin(players) {
   clearStealthNext()
   for (const key of Object.keys(desired)) delete desired[key]
   for (const key of Object.keys(stealthInputs)) delete stealthInputs[key]
+  for (const key of Object.keys(chainInputs)) delete chainInputs[key]
   publicGame = false
   advertised = ''
   if (lobbyChannel) lobbyChannel.untrack()
@@ -615,6 +694,18 @@ function begin(players) {
     match = createTtt(players)
     showTtt(match)
     broadcast()
+    return
+  }
+  if (roomGame === 'chain') {
+    const hostSeat = players.find((person) => person.id === myId && hosting) || players[0]
+    const ordered = [hostSeat, ...players.filter((person) => person.id !== hostSeat.id)].slice(0, 2)
+    match = createChainMatch(ordered)
+    showChain(match)
+    broadcast()
+    if (hosting) {
+      chainLast = performance.now()
+      timer = window.setInterval(chainTick, 33)
+    }
     return
   }
   if (roomGame === 'stealth') {
@@ -647,7 +738,14 @@ function openRoom(code, asHost, isPublic, game) {
   roomCode = code
   roomGame = gameOf(game)
   joinedAt = Date.now()
-  const prefix = roomGame === 'ttt' ? 'ttt-' : roomGame === 'stealth' ? 'stealth-' : 'snake-'
+  const prefix =
+    roomGame === 'ttt'
+      ? 'ttt-'
+      : roomGame === 'stealth'
+        ? 'stealth-'
+        : roomGame === 'chain'
+          ? 'chain-'
+          : 'snake-'
   channel = realtime.channel(prefix + code, {
     config: { broadcast: { self: false }, presence: { key: myId } },
   })
@@ -726,6 +824,16 @@ function openRoom(code, asHost, isPublic, game) {
       showStealth(payload)
       return
     }
+    if (roomGame === 'chain') {
+      if (!payload.players || payload.kind !== 'chain') return
+      if (lobby.hidden === false) {
+        lobby.hidden = true
+        play.hidden = false
+        showBoard('chain')
+      }
+      showChain(payload)
+      return
+    }
     if (!payload.snakes) return
     if (lobby.hidden === false) {
       lobby.hidden = true
@@ -745,6 +853,14 @@ function openRoom(code, asHost, isPublic, game) {
   channel.on('broadcast', { event: 'stealth-ready' }, ({ payload }) => {
     if (!hosting || roomGame !== 'stealth' || !payload || !payload.id) return
     markStealthReady(payload.id)
+  })
+  channel.on('broadcast', { event: 'chain' }, ({ payload }) => {
+    if (!hosting || roomGame !== 'chain' || !payload || !payload.id) return
+    chainInputs[payload.id] = {
+      left: Boolean(payload.left),
+      right: Boolean(payload.right),
+      jump: Boolean(payload.jump) || (chainInputs[payload.id] && chainInputs[payload.id].jump),
+    }
   })
   channel.on('broadcast', { event: 'stealth' }, ({ payload }) => {
     if (!hosting || roomGame !== 'stealth' || !payload || !payload.id) return
@@ -881,6 +997,9 @@ startButton.addEventListener('click', () => {
   if (roomGame === 'stealth' && people.length < 2) {
     people = [people[0], { id: BOT_ID, name: 'Bot' }]
   }
+  if (roomGame === 'chain' && people.length < 2) {
+    people = [people[0], { id: CHAIN_BOT_ID, name: 'Bot' }]
+  }
   channel.send({ type: 'broadcast', event: 'start', payload: { players: people } })
   begin(people)
 })
@@ -940,6 +1059,24 @@ function sendStealthInput(fireNow) {
   if (channel) channel.send({ type: 'broadcast', event: 'stealth', payload })
 }
 
+function sendChainInput(jumpNow) {
+  if (roomGame !== 'chain' || !match || match.over) return
+  const payload = {
+    id: myId,
+    left: chainHeld.left,
+    right: chainHeld.right,
+    jump: Boolean(jumpNow),
+  }
+  if (hosting) {
+    chainInputs[myId] = {
+      ...payload,
+      jump: Boolean(jumpNow) || (chainInputs[myId] && chainInputs[myId].jump),
+    }
+    return
+  }
+  if (channel) channel.send({ type: 'broadcast', event: 'chain', payload })
+}
+
 function aimFromEvent(event) {
   const box = stealthCanvas.getBoundingClientRect()
   const x = ((event.clientX - box.left) / box.width) * stealthCanvas.width
@@ -951,6 +1088,29 @@ function aimFromEvent(event) {
 }
 
 window.addEventListener('keydown', (event) => {
+  if (roomGame === 'chain' && match && !match.over) {
+    const key = event.key.toLowerCase()
+    if (key === 'a' || key === 'arrowleft') {
+      event.preventDefault()
+      chainHeld.left = true
+      sendChainInput(false)
+      return
+    }
+    if (key === 'd' || key === 'arrowright') {
+      event.preventDefault()
+      chainHeld.right = true
+      sendChainInput(false)
+      return
+    }
+    if (key === ' ' || key === 'w' || key === 'arrowup') {
+      event.preventDefault()
+      if (!event.repeat) {
+        chainJump = true
+        sendChainInput(true)
+      }
+      return
+    }
+  }
   if (roomGame === 'stealth' && match && !match.over) {
     const key = event.key.toLowerCase()
     if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
@@ -975,8 +1135,20 @@ window.addEventListener('keydown', (event) => {
 })
 
 window.addEventListener('keyup', (event) => {
-  if (roomGame !== 'stealth') return
   const key = event.key.toLowerCase()
+  if (roomGame === 'chain') {
+    if (key === 'a' || key === 'arrowleft') {
+      chainHeld.left = false
+      sendChainInput(false)
+      return
+    }
+    if (key === 'd' || key === 'arrowright') {
+      chainHeld.right = false
+      sendChainInput(false)
+      return
+    }
+  }
+  if (roomGame !== 'stealth') return
   if (key !== 'w' && key !== 'a' && key !== 's' && key !== 'd') return
   stealthHeld[key] = false
   sendStealthInput(false)

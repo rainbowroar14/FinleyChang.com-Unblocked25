@@ -8,7 +8,7 @@ export const BOT_ID = 'stealth-bot'
 
 const SPEED = 128
 const KNIFE_SPEED = SPEED * 1.3 * 1.2
-const BULLET_SPEED = 360
+const BULLET_SPEED = 540
 
 export const WALLS = [
   { x: 0, y: 0, w: 640, h: 20 },

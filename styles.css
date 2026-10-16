@@ -195,6 +195,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 #snake-stage[hidden],
 #ttt-stage[hidden],
 #stealth-stage[hidden],
+#chain-stage[hidden],
 #pad[hidden] {
   display: none;
 }
@@ -284,6 +285,8 @@ canvas {
 input:disabled { opacity: 0.45; }
 
 #stealth { cursor: crosshair; touch-action: none; }
+
+#chain { touch-action: none; }
 
 @media (max-width: 800px) {
   .play { grid-template-columns: 1fr; }
