@@ -62,13 +62,14 @@ function collideY(body, prevY) {
     if (!overX(body, plat)) continue
     const feet = body.y + body.h
     const prevFeet = prevY + body.h
+    // Sweep: catch landings even when falling fast through a thin ledge
     if (body.vy >= 0 && prevFeet <= plat.y + 1 && feet >= plat.y) {
       body.y = plat.y - body.h
       body.vy = 0
       body.grounded = true
       continue
     }
-    if (body.vy < 0 && prevY >= plat.y + plat.h - 1 && body.y < plat.y + plat.h) {
+    if (body.vy < 0 && prevY >= plat.y + plat.h - 1 && body.y <= plat.y + plat.h) {
       body.y = plat.y + plat.h
       body.vy = 0
       continue
@@ -78,27 +79,41 @@ function collideY(body, prevY) {
 }
 
 function ejectSolids(body) {
-  for (const plat of PLATFORMS) {
-    if (!overlaps(body, plat)) continue
-    const penUp = body.y + body.h - plat.y
-    const penDown = plat.y + plat.h - body.y
-    const penLeft = body.x + body.w - plat.x
-    const penRight = plat.x + plat.w - body.x
-    const smallest = Math.min(penUp, penDown, penLeft, penRight)
-    if (smallest === penUp || (penUp <= 18 && penUp <= penDown)) {
-      body.y = plat.y - body.h
-      if (body.vy > 0) body.vy = 0
-      body.grounded = true
-    } else if (smallest === penDown) {
-      body.y = plat.y + plat.h
-      if (body.vy < 0) body.vy = 0
-    } else if (smallest === penLeft) {
-      body.x = plat.x - body.w
-      body.vx = 0
-    } else {
-      body.x = plat.x + plat.w
-      body.vx = 0
+  for (let pass = 0; pass < 3; pass += 1) {
+    let hit = false
+    for (const plat of PLATFORMS) {
+      if (!overlaps(body, plat)) continue
+      hit = true
+      const penUp = body.y + body.h - plat.y
+      const penDown = plat.y + plat.h - body.y
+      const penLeft = body.x + body.w - plat.x
+      const penRight = plat.x + plat.w - body.x
+      const bodyMid = body.y + body.h * 0.5
+      const platMid = plat.y + plat.h * 0.5
+      const isFloor = plat === PLATFORMS[0]
+      // Never shove someone deeper into the world floor — always exit upward.
+      const preferUp =
+        isFloor ||
+        body.vy >= 0 ||
+        bodyMid <= platMid ||
+        penUp <= penDown
+      const minHoriz = Math.min(penLeft, penRight)
+      if (preferUp && penUp <= minHoriz + 0.5) {
+        body.y = plat.y - body.h
+        if (body.vy > 0) body.vy = 0
+        body.grounded = true
+      } else if (!preferUp && !isFloor && penDown <= minHoriz + 0.5) {
+        body.y = plat.y + plat.h
+        if (body.vy < 0) body.vy = 0
+      } else if (penLeft < penRight) {
+        body.x = plat.x - body.w
+        body.vx = 0
+      } else {
+        body.x = plat.x + plat.w
+        body.vx = 0
+      }
     }
+    if (!hit) break
   }
   clampWorldX(body)
   const floor = PLATFORMS[0]
@@ -122,21 +137,21 @@ function separatePlayers(a, b) {
       a.x += push
       b.x -= push
     }
-    a.vx = 0
-    b.vx = 0
-  } else {
-    const push = overlapY / 2 + 0.01
-    if (a.y < b.y) {
-      a.y -= push
-      b.y += push
-      if (b.vy > 0) b.vy = 0
-      b.grounded = true
+    a.vx *= 0.5
+    b.vx *= 0.5
+  } else if (a.y < b.y) {
+    // Keep the lower cube planted; lift the upper one instead of burying anyone.
+    a.y -= overlapY + 0.01
+    if (b.grounded) {
+      /* leave b */
     } else {
-      a.y += push
-      b.y -= push
-      if (a.vy > 0) a.vy = 0
-      a.grounded = true
+      b.y += overlapY * 0.25
     }
+    if (a.vy > 0) a.vy = 0
+  } else {
+    b.y -= overlapY + 0.01
+    if (!a.grounded) a.y += overlapY * 0.25
+    if (b.vy > 0) b.vy = 0
   }
   ejectSolids(a)
   ejectSolids(b)
@@ -151,7 +166,7 @@ function enforceChain(a, b) {
   const dy = by - ay
   const dist = Math.hypot(dx, dy) || 0.0001
   if (dist <= CHAIN_LEN) return
-  const excess = Math.min(dist - CHAIN_LEN, 28)
+  const excess = Math.min(dist - CHAIN_LEN, 18)
   const nx = dx / dist
   const ny = dy / dist
   const pull = excess * CHAIN_PULL * 0.5
@@ -162,12 +177,12 @@ function enforceChain(a, b) {
   const alongA = a.vx * nx + a.vy * ny
   const alongB = b.vx * nx + b.vy * ny
   if (alongA > 0) {
-    a.vx -= nx * alongA * 0.35
-    a.vy -= ny * alongA * 0.35
+    a.vx -= nx * alongA * 0.45
+    a.vy -= ny * alongA * 0.45
   }
   if (alongB < 0) {
-    b.vx -= nx * alongB * 0.35
-    b.vy -= ny * alongB * 0.35
+    b.vx -= nx * alongB * 0.45
+    b.vy -= ny * alongB * 0.45
   }
   ejectSolids(a)
   ejectSolids(b)
@@ -292,14 +307,15 @@ function drawCube(ctx, player, time) {
   ctx.fillStyle = '#0f172a'
   ctx.fillRect(leftEye + look, eyeY + 2, 3, 3)
   ctx.fillRect(rightEye + look, eyeY + 2, 3, 3)
-  const bob = grounded && Math.abs(vx) > 20 ? Math.sin(walk * 2.2) * 3 : 0
-  const legY = y + h - 2
+  const bob = grounded && Math.abs(vx) > 20 ? Math.sin(walk * 2.2) * 2 : 0
+  const legH = 6
+  const legY = y + h - legH
   ctx.fillStyle = color
-  ctx.fillRect(x + 5, legY + Math.max(0, bob), 6, 8)
-  ctx.fillRect(x + w - 11, legY + Math.max(0, -bob), 6, 8)
+  ctx.fillRect(x + 5, legY + Math.max(0, bob) * 0.3, 6, legH)
+  ctx.fillRect(x + w - 11, legY + Math.max(0, -bob) * 0.3, 6, legH)
   ctx.fillStyle = 'rgba(15,23,42,0.35)'
-  ctx.fillRect(x + 5, legY + 6 + Math.max(0, bob), 6, 3)
-  ctx.fillRect(x + w - 11, legY + 6 + Math.max(0, -bob), 6, 3)
+  ctx.fillRect(x + 5, legY + legH - 2, 6, 2)
+  ctx.fillRect(x + w - 11, legY + legH - 2, 6, 2)
   void time
 }
 
